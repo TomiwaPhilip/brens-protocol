@@ -35,7 +35,7 @@ contract TPTFactory {
     constructor(address _registry) {
         owner = msg.sender;
         feeRecipient = msg.sender;
-        launchFee = 0.01 ether;
+        launchFee = 0;
         REGISTRY = TPTRegistry(_registry);
     }
     
@@ -69,7 +69,7 @@ contract TPTFactory {
         // Register TPT
         REGISTRY.registerTPT(tptAddress, msg.sender, name, symbol, initialSupply);
         
-        // Transfer fee
+        // Transfer fee if any
         if (msg.value > 0) {
             (bool success, ) = feeRecipient.call{value: msg.value}("");
             require(success, "Fee transfer failed");
