@@ -4,7 +4,7 @@ pragma solidity >=0.8.19 <0.9.0;
 import "forge-std/Script.sol";
 import "../src/TPTFactory.sol";
 import "../src/TPTRegistry.sol";
-import "../src/FHERC20.sol";
+import "../src/TPT.sol";
 
 /**
  * @title DeployTPTFactory

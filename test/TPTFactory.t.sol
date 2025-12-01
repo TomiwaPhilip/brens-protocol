@@ -2,14 +2,14 @@
 pragma solidity >=0.8.19 <0.9.0;
 
 import "forge-std/Test.sol";
-import "../src/FHERC20.sol";
+import "../src/TPT.sol";
 import "../src/TPTFactory.sol";
 import "../src/TPTRegistry.sol";
 import { FHE, inEuint128 } from "../lib/fhenix-contracts/contracts/FHE.sol";
 
 /**
  * @title TPTFactoryTest
- * @notice Comprehensive tests for TPT Factory and FHERC20
+ * @notice Comprehensive tests for TPT Factory and TPT tokens
  */
 contract TPTFactoryTest is Test {
     
@@ -279,13 +279,13 @@ contract TPTFactoryTest is Test {
 }
 
 /**
- * @title FHERC20Test
- * @notice Tests for FHERC20 token functionality
+ * @title TPTTest
+ * @notice Tests for TPT token functionality
  * @dev Note: Some tests are simplified as full FHE testing requires Fhenix runtime
  */
-contract FHERC20Test is Test {
+contract TPTTest is Test {
     
-    FHERC20 public token;
+    TPT public token;
     address public creator;
     address public user1;
     address public user2;
@@ -297,7 +297,7 @@ contract FHERC20Test is Test {
         
         // Deploy token
         vm.prank(creator);
-        token = new FHERC20(
+        token = new TPT(
             "Private Token",
             "pTKN",
             1_000_000 * 10**18,
@@ -327,7 +327,7 @@ contract FHERC20Test is Test {
     
     function testGrantViewKeyInvalidAddress() public {
         vm.startPrank(user1);
-        vm.expectRevert(FHERC20.InvalidAddress.selector);
+        vm.expectRevert(TPT.InvalidAddress.selector);
         token.grantViewKey(address(0));
         vm.stopPrank();
     }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity >=0.8.19 <0.9.0;
 
-import { FHERC20 } from "./FHERC20.sol";
+import { TPT } from "./TPT.sol";
 import { TPTRegistry } from "./TPTRegistry.sol";
 
 /**
@@ -52,7 +52,7 @@ contract TPTFactory {
         
         // Deploy with CREATE2
         bytes memory bytecode = abi.encodePacked(
-            type(FHERC20).creationCode,
+            type(TPT).creationCode,
             abi.encode(name, symbol, initialSupply, msg.sender)
         );
         
@@ -88,7 +88,7 @@ contract TPTFactory {
     ) public view returns (address) {
         bytes32 bytecodeHash = keccak256(
             abi.encodePacked(
-                type(FHERC20).creationCode,
+                type(TPT).creationCode,
                 abi.encode(name, symbol, initialSupply, creator)
             )
         );
