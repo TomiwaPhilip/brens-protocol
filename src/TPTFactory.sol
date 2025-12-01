@@ -86,16 +86,23 @@ contract TPTFactory {
         address creator,
         bytes32 salt
     ) public view returns (address) {
-        bytes32 bytecodeHash = keccak256(
-            abi.encodePacked(
-                type(TPT).creationCode,
-                abi.encode(name, symbol, initialSupply, creator)
-            )
+        bytes memory bytecode = abi.encodePacked(
+            type(TPT).creationCode,
+            abi.encode(name, symbol, initialSupply, creator)
         );
         
-        return address(uint160(uint256(keccak256(
-            abi.encodePacked(bytes1(0xff), address(this), salt, bytecodeHash)
-        ))));
+        bytes32 bytecodeHash;
+        assembly {
+            bytecodeHash := keccak256(add(bytecode, 32), mload(bytecode))
+        }
+        
+        bytes memory data = abi.encodePacked(bytes1(0xff), address(this), salt, bytecodeHash);
+        bytes32 hash;
+        assembly {
+            hash := keccak256(add(data, 32), mload(data))
+        }
+        
+        return address(uint160(uint256(hash)));
     }
     
     function setLaunchFee(uint256 newFee) external onlyOwner {
