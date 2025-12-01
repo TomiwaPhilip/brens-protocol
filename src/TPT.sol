@@ -2,7 +2,7 @@
 pragma solidity >=0.8.19 <0.9.0;
 
 import { FHERC20 as BaseFHERC20 } from "../lib/fhenix-contracts/contracts/experimental/token/FHERC20/FHERC20.sol";
-import { FHE, euint128, inEuint128 } from "../lib/fhenix-contracts/contracts/FHE.sol";
+import { inEuint128 } from "../lib/fhenix-contracts/contracts/FHE.sol";
 import { Permission } from "../lib/fhenix-contracts/contracts/access/Permissioned.sol";
 
 /**

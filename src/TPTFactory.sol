@@ -10,7 +10,7 @@ import { TPTRegistry } from "./TPTRegistry.sol";
  */
 contract TPTFactory {
     
-    TPTRegistry public immutable registry;
+    TPTRegistry public immutable REGISTRY;
     uint256 public launchFee;
     address public feeRecipient;
     address public owner;
@@ -36,7 +36,7 @@ contract TPTFactory {
         owner = msg.sender;
         feeRecipient = msg.sender;
         launchFee = 0.01 ether;
-        registry = TPTRegistry(_registry);
+        REGISTRY = TPTRegistry(_registry);
     }
     
     function createTPT(
@@ -64,10 +64,10 @@ contract TPTFactory {
         }
         
         // Check if already exists
-        if (registry.isTPT(tptAddress)) revert TPTAlreadyExists();
+        if (REGISTRY.isTPT(tptAddress)) revert TPTAlreadyExists();
         
         // Register TPT
-        registry.registerTPT(tptAddress, msg.sender, name, symbol, initialSupply);
+        REGISTRY.registerTPT(tptAddress, msg.sender, name, symbol, initialSupply);
         
         // Transfer fee
         if (msg.value > 0) {

@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity >=0.8.19 <0.9.0;
 
-import "forge-std/Test.sol";
-import "../src/TPT.sol";
-import "../src/TPTFactory.sol";
-import "../src/TPTRegistry.sol";
-import { FHE, inEuint128 } from "../lib/fhenix-contracts/contracts/FHE.sol";
+import { Test } from "forge-std/Test.sol";
+import { TPT } from "../src/TPT.sol";
+import { TPTFactory } from "../src/TPTFactory.sol";
+import { TPTRegistry } from "../src/TPTRegistry.sol";
 
 /**
  * @title TPTFactoryTest
@@ -56,7 +55,7 @@ contract TPTFactoryTest is Test {
         assertEq(factory.feeRecipient(), feeRecipient);
         assertEq(factory.launchFee(), LAUNCH_FEE);
         assertEq(registry.getTotalTPTs(), 0);
-        assertEq(address(factory.registry()), address(registry));
+        assertEq(address(factory.REGISTRY()), address(registry));
     }
     
     function testCreateTPT() public {
@@ -105,9 +104,9 @@ contract TPTFactoryTest is Test {
         assertFalse(metadata.isVerified);
         
         // Check creator TPTs
-        address[] memory creatorTPTs = registry.getCreatorTPTs(user1);
-        assertEq(creatorTPTs.length, 1);
-        assertEq(creatorTPTs[0], tptAddress);
+        address[] memory creatorTpts = registry.getCreatorTPTs(user1);
+        assertEq(creatorTpts.length, 1);
+        assertEq(creatorTpts[0], tptAddress);
         
         // Check fee was transferred
         assertEq(feeRecipient.balance, LAUNCH_FEE);

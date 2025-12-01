@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity >=0.8.19 <0.9.0;
 
-import "forge-std/Script.sol";
-import "../src/TPTFactory.sol";
-import "../src/TPTRegistry.sol";
-import "../src/TPT.sol";
+import { Script, console } from "forge-std/Script.sol";
+import { TPTFactory } from "../src/TPTFactory.sol";
+import { TPTRegistry } from "../src/TPTRegistry.sol";
 
 /**
  * @title DeployTPTFactory
