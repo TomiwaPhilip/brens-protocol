@@ -46,30 +46,72 @@
 ## 📋 Pre-Deployment Checklist
 
 ### Environment Setup
-- [ ] Foundry installed and updated
-- [ ] Private key secured in .env
-- [ ] Fhenix Helium testnet RPC configured
-- [ ] Test FHE tokens obtained from faucet
+- [x] Foundry installed and updated
+- [x] Private key secured in .env
+- [x] Base Sepolia testnet RPC configured
+- [x] Test ETH obtained from faucet
 
 ### Contract Verification
-- [ ] Review FHERC20.sol for any final adjustments
-- [ ] Review TPTFactory.sol fee settings (currently 0.01 ETH)
-- [ ] Confirm initial owner/fee recipient addresses
-- [ ] Security audit considerations documented
+- [x] Review FHERC20.sol for any final adjustments
+- [x] Review TPTFactory.sol fee settings (currently 0 ETH)
+- [x] Confirm initial owner/fee recipient addresses
+- [x] Optimizer enabled (200 runs) to fit contract size limits
+- [x] TPT decimals set to 6 (like USDC)
 
 ### Deployment Steps
-1. [ ] Deploy TPTFactory to Fhenix testnet
-2. [ ] Verify deployment on Fhenix Explorer
-3. [ ] Create first sample TPT (pUSDC or similar)
-4. [ ] Test transfer operations
-5. [ ] Test view key grants
-6. [ ] Document deployed addresses
+1. [x] Deploy TPTRegistry to Base Sepolia
+2. [x] Deploy TPTFactory to Base Sepolia
+3. [x] Transfer registry ownership to factory
+4. [x] Verify contracts on BaseScan
+5. [ ] Create first sample TPT (pUSDC)
+6. [ ] Test transfer operations
+7. [ ] Test view key grants
 
 ### Post-Deployment
-- [ ] Update README with deployed addresses
+- [x] Document deployed addresses
 - [ ] Create deployment announcement
 - [ ] Share contract addresses with frontend team
 - [ ] Monitor gas costs and optimize if needed
+
+## 🎉 DEPLOYMENT COMPLETE - Base Sepolia Testnet
+
+**Network**: Base Sepolia (Chain ID: 84532)  
+**Deployment Date**: December 2, 2025  
+**Deployer**: `0xEC891A037F932493624184970a283ab87398e0A6`
+
+### Deployed Contracts
+
+#### TPTRegistry
+- **Address**: `0x61A3CE93923Cce39Aa2d77E18199C65F5496238F`
+- **Explorer**: https://sepolia.basescan.org/address/0x61a3ce93923cce39aa2d77e18199c65f5496238f
+- **Status**: ✅ Verified
+- **Gas Used**: 807,605
+- **Size**: 3,385 bytes (13.8% of limit)
+
+#### TPTFactory
+- **Address**: `0x61A4011769CAA686F7beE90c4B69F6dfa1971Ab3`
+- **Explorer**: https://sepolia.basescan.org/address/0x61a4011769caa686f7bee90c4b69f6dfa1971ab3
+- **Status**: ✅ Verified
+- **Gas Used**: 3,029,101
+- **Size**: 13,538 bytes (55.1% of limit)
+- **Launch Fee**: 0 ETH
+- **Owner**: `0xEC891A037F932493624184970a283ab87398e0A6`
+
+### Transaction Hashes
+- Registry Deployment: `0xd637d9a3a04a9c7a75c154f4ee93a4821dba59b3cb892646f0502f519cd76a09`
+- Factory Deployment: `0x17d9d7f517739f857c6c07c1f4c641b9723fa637de6b7b104ce69bc38802fd11`
+- Ownership Transfer: `0x5bd811d24735050d4deef0373d40c0b50c04837b309c437b4093621ce80a84bf`
+
+### Total Deployment Cost
+- **Total Gas**: 3,863,757 gas
+- **Gas Price**: 0.00121045 gwei
+- **Total Cost**: 0.00000467688466065 ETH (~$0.01 USD)
+
+### Configuration
+- **Optimizer**: Enabled (200 runs)
+- **Solidity Version**: 0.8.30
+- **EVM Version**: Prague
+- **TPT Decimals**: 6 (USDC-style)
 
 ## 🔄 Phase 2: Dark Pool & Advanced Features
 
@@ -169,10 +211,16 @@
 ## 📝 Notes
 
 ### Known Limitations
-1. **FHE Runtime Required**: Full testing requires Fhenix testnet/mainnet
+1. **FHE Runtime Required**: Full FHE testing requires Fhenix testnet/mainnet
 2. **Gas Costs**: FHE operations are more expensive than standard EVM
 3. **Indicated Balances**: Currently placeholder, needs threshold FHE
 4. **No Upgradability**: Contracts are immutable by design
+5. **Currently on Base Sepolia**: Testnet deployment for testing factory mechanics before Fhenix deployment
+
+### Deployment Strategy
+- **Base Sepolia**: Testing factory, CREATE2, and registry functionality
+- **Next Step**: Deploy to Fhenix Helium for full FHE capabilities
+- **Final Target**: Fhenix Mainnet + Multi-chain expansion
 
 ### Future Optimizations
 - Batch operation gas optimization
@@ -180,13 +228,21 @@
 - View function gas reduction
 - Registry query pagination
 
-## 🚀 Ready for Deployment!
+## 🚀 Deployment Status: Phase 1 Complete!
 
-The FHERC20 and TPTFactory contracts are production-ready for Fhenix testnet deployment. All core functionality is implemented, tested, and documented.
+✅ **TPTFactory successfully deployed to Base Sepolia testnet**
+- All contracts verified on BaseScan
+- Registry ownership transferred to factory
+- CREATE2 deployment ready for use
+- Total deployment cost: < $0.01
 
-**Next immediate action**: Deploy to Fhenix Helium testnet and create first TPT!
+**Next Actions**:
+1. Create first TPT using CreateSampleTPT script
+2. Test factory functionality on Base Sepolia
+3. Deploy to Fhenix Helium for FHE features
+4. Connect frontend to deployed contracts
 
 ---
 
-Last Updated: December 1, 2025
-Status: ✅ Ready for Testnet Deployment
+Last Updated: December 2, 2025
+Status: ✅ Deployed to Base Sepolia Testnet

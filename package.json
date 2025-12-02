@@ -1,0 +1,5 @@
+{
+	"dependencies": {
+		"@fhenixprotocol/cofhe-contracts": "^0.0.13"
+	}
+}

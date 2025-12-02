@@ -1,0 +1,5 @@
+@fhenixprotocol/fhenix-confidential-contracts/=lib/fhenix-confidential-contracts/
+@fhenixprotocol/cofhe-contracts/=node_modules/@fhenixprotocol/cofhe-contracts/
+@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/
+forge-std/=lib/forge-std/src/
+v4-periphery/=lib/v4-periphery/

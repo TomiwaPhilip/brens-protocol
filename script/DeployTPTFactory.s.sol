@@ -52,10 +52,10 @@ contract CreateSampleTPT is Script {
         TPTFactory factory = TPTFactory(factoryAddress);
         
         // Create a sample TPT
-        string memory name = "Private USD Coin";
-        string memory symbol = "pUSDC";
-        uint256 initialSupply = 1_000_000 * 10**18; // 1 million tokens
-        bytes32 salt = keccak256(abi.encodePacked("brens-pusdc-v1"));
+        string memory name = "FHE USD Coin";
+        string memory symbol = "fhUSDC";
+        uint64 initialSupply = 1_000_000; // 1 million tokens (6 decimals like USDC)
+        bytes32 salt = keccak256(abi.encodePacked("brens-fhusdc-v1"));
         
         // Compute address before deployment
         address predictedAddress = factory.computeTPTAddress(
@@ -113,10 +113,10 @@ contract BatchCreateTPTs is Script {
         symbols[1] = "pBTC";
         symbols[2] = "pUSD";
         
-        uint256[] memory supplies = new uint256[](3);
-        supplies[0] = 21_000_000 * 10**18;
-        supplies[1] = 21_000_000 * 10**18;
-        supplies[2] = 1_000_000_000 * 10**18;
+        uint64[] memory supplies = new uint64[](3);
+        supplies[0] = 21_000_000; // 21M tokens
+        supplies[1] = 21_000_000; // 21M tokens  
+        supplies[2] = 1_000_000_000; // 1B tokens
         
         bytes32[] memory salts = new bytes32[](3);
         salts[0] = keccak256("pETH");

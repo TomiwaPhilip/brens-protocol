@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: MIT
-pragma solidity >=0.8.19 <0.9.0;
+pragma solidity ^0.8.25;
 
-import { FHERC20 as BaseFHERC20 } from "../lib/fhenix-contracts/contracts/experimental/token/FHERC20/FHERC20.sol";
-import { inEuint128 } from "../lib/fhenix-contracts/contracts/FHE.sol";
-import { Permission } from "../lib/fhenix-contracts/contracts/access/Permissioned.sol";
+import { FHERC20 } from "@fhenixprotocol/fhenix-confidential-contracts/contracts/FHERC20.sol";
 
 /**
  * @title TPT (Tradeable Private Token)
@@ -11,18 +9,19 @@ import { Permission } from "../lib/fhenix-contracts/contracts/access/Permissione
  * @dev Inherits from official Fhenix FHERC20 and adds:
  * 
  * Additional Features Beyond Base FHERC20:
+ * - Fixed supply minting pattern (OpenZeppelin ERC20 style)
  * - Selective disclosure via view keys for compliance/auditing
  * - Initial supply minting to creator
  * - Enhanced metadata and events
  * 
  * Inherits from Base FHERC20:
- * - Encrypted balances (euint128) - balances are never visible on-chain
+ * - Encrypted balances (euint64) - balances are never visible on-chain
  * - Zero-replacement logic - failed transfers don't revert (prevents balance disclosure)
- * - Encrypted transfers and approvals
- * - Wrap/unwrap between public and private tokens
+ * - Encrypted transfers via confidentialTransfer and confidentialTransferFrom
+ * - Operator-based permissions (no allowances to prevent leakage)
  * - Wallet UX compatibility with indicated balances
  */
-contract TPT is BaseFHERC20 {
+contract TPT is FHERC20 {
     
     // View key registry for compliance (selective disclosure)
     mapping(address => mapping(address => bool)) public viewKeyAuthorizations;
@@ -35,18 +34,25 @@ contract TPT is BaseFHERC20 {
     error InvalidAddress();
     error Unauthorized();
     
+    /**
+     * @dev Constructor following OpenZeppelin's fixed supply pattern
+     * See: https://forum.openzeppelin.com/t/how-to-implement-erc20-supply-mechanisms/226
+     * 
+     * @param _name Token name
+     * @param _symbol Token symbol
+     * @param _initialSupply Initial supply to mint (as uint64, respects decimals)
+     * @param _creator Address to receive initial supply
+     */
     constructor(
         string memory _name,
         string memory _symbol,
-        uint256 _initialSupply,
+        uint64 _initialSupply,
         address _creator
-    ) BaseFHERC20(_name, _symbol) {
-        // Mint initial encrypted supply to creator
-        if (_initialSupply > 0) {
-            inEuint128 memory encryptedSupply;
-            encryptedSupply.data = abi.encode(_initialSupply);
-            encryptedSupply.securityZone = 0;
-            _mintEncrypted(_creator, encryptedSupply);
+    ) FHERC20(_name, _symbol, 6) {
+        // Mint initial encrypted supply to creator using internal _mint
+        // This follows OpenZeppelin's pattern for fixed supply tokens
+        if (_initialSupply > 0 && _creator != address(0)) {
+            _mint(_creator, _initialSupply);
         }
     }
     
@@ -73,17 +79,5 @@ contract TPT is BaseFHERC20 {
      */
     function hasViewKey(address account, address viewer) public view returns (bool) {
         return viewKeyAuthorizations[account][viewer];
-    }
-    
-    /**
-     * @notice View balance with view key authorization (for compliance)
-     * @dev Only works if account has granted view key to caller
-     */
-    function viewBalanceWithKey(
-        address account,
-        Permission memory permission
-    ) public view returns (string memory) {
-        if (!viewKeyAuthorizations[account][msg.sender]) revert Unauthorized();
-        return balanceOfEncrypted(account, permission);
     }
 }

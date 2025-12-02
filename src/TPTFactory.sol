@@ -42,7 +42,7 @@ contract TPTFactory {
     function createTPT(
         string memory name,
         string memory symbol,
-        uint256 initialSupply,
+        uint64 initialSupply,
         bytes32 salt
     ) public payable returns (address tptAddress) {
         if (msg.value < launchFee) revert InsufficientFee();
@@ -82,7 +82,7 @@ contract TPTFactory {
     function computeTPTAddress(
         string memory name,
         string memory symbol,
-        uint256 initialSupply,
+        uint64 initialSupply,
         address creator,
         bytes32 salt
     ) public view returns (address) {

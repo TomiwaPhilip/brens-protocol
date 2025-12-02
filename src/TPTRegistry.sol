@@ -13,7 +13,7 @@ contract TPTRegistry {
         address creator;
         string name;
         string symbol;
-        uint256 initialSupply;
+        uint64 initialSupply;
         uint256 createdAt;
         bool isVerified;
     }
@@ -44,7 +44,7 @@ contract TPTRegistry {
         address creator,
         string memory name,
         string memory symbol,
-        uint256 initialSupply
+        uint64 initialSupply
     ) external onlyOwner {
         TPTMetadata memory metadata = TPTMetadata({
             tokenAddress: tokenAddress,

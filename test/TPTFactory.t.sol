@@ -61,7 +61,7 @@ contract TPTFactoryTest is Test {
     function testCreateTPT() public {
         string memory name = "Private Token";
         string memory symbol = "pTKN";
-        uint256 initialSupply = 1_000_000 * 10**18;
+        uint64 initialSupply = 1_000_000; // 1M tokens (decimals handled by contract)
         bytes32 salt = keccak256("test-salt");
         
         vm.startPrank(user1);
@@ -254,7 +254,7 @@ contract TPTFactoryTest is Test {
             factory.createTPT{value: LAUNCH_FEE}(
                 string(abi.encodePacked("Token", i)),
                 string(abi.encodePacked("TKN", i)),
-                1000 * (i + 1),
+                uint64(1000 * (i + 1)),
                 keccak256(abi.encodePacked(i))
             );
         }
@@ -299,7 +299,7 @@ contract TPTTest is Test {
         token = new TPT(
             "Private Token",
             "pTKN",
-            1_000_000 * 10**18,
+            1_000_000, // 1M tokens
             creator
         );
     }
@@ -307,7 +307,7 @@ contract TPTTest is Test {
     function testTokenMetadata() public view {
         assertEq(token.name(), "Private Token");
         assertEq(token.symbol(), "pTKN");
-        assertEq(token.decimals(), 18);
+        assertEq(token.decimals(), 6);
     }
     
     function testViewKeyManagement() public {
