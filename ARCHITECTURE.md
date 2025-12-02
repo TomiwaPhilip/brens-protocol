@@ -256,6 +256,7 @@ brens-protocol/
 ├── src/                          # Smart Contracts
 │   ├── FHERC20.sol              # TPT implementation (222 lines)
 │   ├── TPTFactory.sol           # CREATE2 factory (284 lines)
+│   ├── PrivatePoolHook.sol      # Dark pool hook (220 lines)
 │   └── IFHERC20.sol             # Standard interface (37 lines)
 │
 ├── script/                       # Deployment Scripts
@@ -267,11 +268,35 @@ brens-protocol/
 ├── lib/                          # Dependencies
 │   ├── forge-std/               # Foundry testing
 │   ├── fhenix-contracts/        # FHE operations
-│   └── v4-periphery/            # Uniswap v4 (future)
+│   └── v4-periphery/            # Uniswap v4 hooks
 │
 └── docs/                         # Documentation
     ├── README.md                # Main documentation
     ├── QUICKSTART.md            # Quick start guide
     ├── IMPLEMENTATION.md        # Implementation details
+    ├── HOOK_DESIGN.md           # Dark pool hook design decisions
+    ├── DEPLOYMENTS.md           # Deployment records
     └── ARCHITECTURE.md          # This file
 ```
+
+---
+
+## Dark Pool Hook Architecture
+
+For detailed documentation on the PrivatePoolHook design, see [HOOK_DESIGN.md](./HOOK_DESIGN.md).
+
+**Key Features:**
+- **Constant Sum Market Maker (CSMM):** 1:1 pricing instead of AMM curves
+- **Circuit Breaker Protection:** Prevents pool drainage during depegs (70/30 threshold)
+- **Custom Liquidity:** Symmetric deposits via ERC-6909 claim tokens
+- **FHE-Ready:** Architecture designed for encrypted reserve migration
+- **Fee Mechanism:** 0.1% swap fees auto-compound for LPs
+
+**Design Rationale:**
+```
+Traditional AMM (x*y=k)         →  ❌ Price slippage, FHE-incompatible
+StableSwap Curve                →  ❌ Iterative calculations, reveals reserves
+CSMM (x+y=k) + Circuit Breaker  →  ✅ FHE-compatible, privacy-preserving
+```
+
+See [HOOK_DESIGN.md](./HOOK_DESIGN.md) for complete technical specifications, migration paths, and security analysis.
