@@ -38,11 +38,11 @@ pragma solidity ^0.8.26;
  *    - Rationale: Enables non-AMM pricing models (CSMM, future FHE calculations)
  *    - Critical: beforeSwapReturnDelta permission must be enabled
  * 
- * FHE READINESS:
- * - Pure CSMM works with encrypted values (no iterative calculations)
- * - Circuit breaker can compare encrypted reserves to encrypted thresholds
- * - ERC-6909 balances can be replaced with euint64 tracking
- * - Current implementation uses plaintext as foundation before FHE integration
+ * FHE INTEGRATION (Phase 2 - In Progress):
+ * - Encrypted swap amounts tracked via euint64
+ * - Circuit breaker currently uses plaintext for gas efficiency
+ * - Future: Full reserve encryption (Phase 3)
+ * - Current: Hybrid approach (encrypted amounts, plaintext circuit breaker)
  */
 
 import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
@@ -54,6 +54,7 @@ import {Hooks} from "v4-core/libraries/Hooks.sol";
 import {BeforeSwapDelta, toBeforeSwapDelta} from "v4-core/types/BeforeSwapDelta.sol";
 import {BaseHook} from "v4-periphery/src/utils/BaseHook.sol";
 import {ModifyLiquidityParams, SwapParams} from "v4-core/types/PoolOperation.sol";
+import {FHE, Utils, euint64, InEuint64, ebool} from "@fhenixprotocol/cofhe-contracts/FHE.sol";
 
 contract PrivatePoolHook is BaseHook {
     using CurrencySettler for Currency;
@@ -70,13 +71,19 @@ contract PrivatePoolHook is BaseHook {
     uint256 public constant MAX_IMBALANCE_RATIO = 7000; // 70%
     uint256 public constant MIN_IMBALANCE_RATIO = 3000; // 30%
 
+    // Encrypted swap volume tracking per pool (for privacy analytics)
+    mapping(PoolId => euint64) internal _encryptedVolume0;
+    mapping(PoolId => euint64) internal _encryptedVolume1;
+
     event HookSwap(
         bytes32 indexed id, // v4 pool id
         address indexed sender, // router of the swap
         int128 amount0,
         int128 amount1,
         uint128 hookLPfeeAmount0,
-        uint128 hookLPfeeAmount1
+        uint128 hookLPfeeAmount1,
+        euint64 encryptedAmount0, // FHE: encrypted swap amount for currency0
+        euint64 encryptedAmount1  // FHE: encrypted swap amount for currency1
     );
 
     event HookModifyLiquidity(
@@ -270,13 +277,23 @@ contract PrivatePoolHook is BaseHook {
                 true
             );
 
+            // FHE: Track encrypted volumes for privacy-preserving analytics
+            PoolId poolId = key.toId();
+            euint64 encAmount0 = FHE.asEuint64(uint64(uint128(absInputAmount)));
+            euint64 encAmount1 = FHE.asEuint64(uint64(uint128(absOutputAmount)));
+            
+            _encryptedVolume0[poolId] = FHE.add(_encryptedVolume0[poolId], encAmount0);
+            _encryptedVolume1[poolId] = FHE.add(_encryptedVolume1[poolId], encAmount1);
+
             emit HookSwap(
-                PoolId.unwrap(key.toId()),
+                PoolId.unwrap(poolId),
                 sender,
                 -absInputAmount,
                 absOutputAmount,
                 uint128(feeAmount),
-                0
+                0,
+                encAmount0,
+                encAmount1
             );
         } else {
             key.currency0.settle(
@@ -292,16 +309,37 @@ contract PrivatePoolHook is BaseHook {
                 true
             );
 
+            // FHE: Track encrypted volumes for privacy-preserving analytics
+            PoolId poolId = key.toId();
+            euint64 encAmount0 = FHE.asEuint64(uint64(uint128(absOutputAmount)));
+            euint64 encAmount1 = FHE.asEuint64(uint64(uint128(absInputAmount)));
+            
+            _encryptedVolume0[poolId] = FHE.add(_encryptedVolume0[poolId], encAmount0);
+            _encryptedVolume1[poolId] = FHE.add(_encryptedVolume1[poolId], encAmount1);
+
             emit HookSwap(
-                PoolId.unwrap(key.toId()),
+                PoolId.unwrap(poolId),
                 sender,
                 absOutputAmount,
                 -absInputAmount,
                 0,
-                uint128(feeAmount)
+                uint128(feeAmount),
+                encAmount0,
+                encAmount1
             );
         }
 
         return (this.beforeSwap.selector, beforeSwapDelta, 0);
+    }
+
+    /**
+     * @notice Get encrypted volume for a specific pool and currency
+     * @dev Returns encrypted uint64 representing cumulative swap volume
+     * @param poolId The pool ID to query
+     * @param currency0 If true, returns volume for currency0; otherwise currency1
+     * @return Encrypted cumulative volume (euint64)
+     */
+    function getEncryptedVolume(PoolId poolId, bool currency0) external view returns (euint64) {
+        return currency0 ? _encryptedVolume0[poolId] : _encryptedVolume1[poolId];
     }
 }
