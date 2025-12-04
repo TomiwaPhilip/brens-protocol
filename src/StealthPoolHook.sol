@@ -4,7 +4,7 @@ pragma solidity ^0.8.26;
 /**
  * @title StealthPoolHook
  * @notice Uniswap v4 hook implementing a true stealth dark pool with complete trade privacy
- * @dev ALL 6 STEPS COMPLETE - Production-ready stealth pool implementation
+ * @dev ALL STEPS COMPLETE - Production-ready stealth pool implementation
  * 
  * DESIGN PHILOSOPHY:
  * This hook creates a private liquidity pool that completely bypasses Uniswap's AMM pricing.
@@ -46,12 +46,6 @@ pragma solidity ^0.8.26;
  *    - Returns custom amounts that completely bypass Uniswap's pricing logic
  *    - Rationale: Enables non-AMM pricing models (CSMM, future FHE calculations)
  *    - Critical: beforeSwapReturnDelta permission must be enabled
- * 
- * FHE READINESS:
- * - Pure CSMM works with encrypted values (no iterative calculations)
- * - Circuit breaker can compare encrypted reserves to encrypted thresholds
- * - ERC-6909 balances can be replaced with euint64 tracking
- * - Current implementation uses plaintext as foundation before FHE integration
  */
 
 import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
