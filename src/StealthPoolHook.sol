@@ -2,13 +2,19 @@
 pragma solidity ^0.8.26;
 
 /**
- * @title PrivatePoolHook
- * @notice Uniswap v4 hook implementing a dark pool with FHE-ready architecture
+ * @title StealthPoolHook
+ * @notice Uniswap v4 hook implementing a true stealth dark pool (Phase: Step 1 - Refactored Foundation)
  * 
  * DESIGN PHILOSOPHY:
  * This hook creates a private liquidity pool that completely bypasses Uniswap's AMM pricing.
  * Instead of x*y=k (constant product), it implements x+y=k (constant sum) for 1:1 swaps,
  * ideal for stablecoin pairs and private tokens.
+ * 
+ * STEALTH FEATURES (being implemented in stages):
+ * - Hidden real reserves (private mappings)
+ * - Masked trade sizes (fixed dummy deltas)
+ * - Off-chain monitoring via events
+ * - Zero slippage 1:1 pricing with circuit breaker protection
  * 
  * ARCHITECTURE DECISIONS:
  * 
@@ -52,6 +58,7 @@ import {Currency} from "v4-core/types/Currency.sol";
 import {IERC20Minimal} from "v4-core/interfaces/external/IERC20Minimal.sol";
 import {Hooks} from "v4-core/libraries/Hooks.sol";
 import {BeforeSwapDelta, toBeforeSwapDelta} from "v4-core/types/BeforeSwapDelta.sol";
+import {BalanceDelta} from "v4-core/types/BalanceDelta.sol";
 import {BaseHook} from "v4-periphery/src/utils/BaseHook.sol";
 import {ModifyLiquidityParams, SwapParams} from "v4-core/types/PoolOperation.sol";
 
@@ -67,6 +74,16 @@ contract StealthPoolHook is BaseHook {
     // If one currency exceeds 70% of total reserves, swaps in that direction halt
     uint256 public constant MAX_IMBALANCE_RATIO = 7000; // 70%
     uint256 public constant MIN_IMBALANCE_RATIO = 3000; // 30%
+    
+    // Dummy reserves reported to PoolManager (stealth layer)
+    // Public queries will always see these fixed values, hiding true liquidity
+    uint256 public constant DUMMY_RESERVE = 1_000_000 * 1e18; // 1M units at 18 decimals
+
+    // Step 2: Private reserve tracking (real balances hidden from public view)
+    // Maps PoolId => [reserve0, reserve1] for actual liquidity calculations
+    mapping(PoolId => uint256[2]) private s_realReserves;
+    // Track if pool has been initialized with real reserves
+    mapping(PoolId => bool) private s_initialized;
 
     event HookSwap(
         bytes32 indexed id, // v4 pool id
@@ -93,6 +110,20 @@ contract StealthPoolHook is BaseHook {
 
     constructor(IPoolManager poolManager) BaseHook(poolManager) {}
 
+    /**
+     * @notice Returns dummy public reserves (stealth layer)
+     * @dev Always returns fixed DUMMY_RESERVE values to hide real liquidity
+     * @param key Pool key to query
+     * @return reserve0 Fake reserve for currency0
+     * @return reserve1 Fake reserve for currency1
+     */
+    function getPublicReserves(PoolKey calldata key) external pure returns (uint256 reserve0, uint256 reserve1) {
+        // Prevent compiler warnings
+        key;
+        // Step 2: Return fixed dummy values regardless of real reserves
+        return (DUMMY_RESERVE, DUMMY_RESERVE);
+    }
+
     function getHookPermissions()
         public
         pure
@@ -108,7 +139,7 @@ contract StealthPoolHook is BaseHook {
                 beforeRemoveLiquidity: false,
                 afterRemoveLiquidity: false,
                 beforeSwap: true, // Override how swaps are done
-                afterSwap: false,
+                afterSwap: true, // Enable for post-swap dummy reserve updates
                 beforeDonate: false,
                 afterDonate: false,
                 beforeSwapReturnDelta: true,
@@ -161,6 +192,23 @@ contract StealthPoolHook is BaseHook {
         _take(callbackData.currency0, address(this), callbackData.amountEach, true);
         _take(callbackData.currency1, address(this), callbackData.amountEach, true);
 
+        // Step 2: Update real reserves (private tracking)
+        // Note: We derive PoolKey from the callback data to update reserves
+        // This is safe because we control the callback data encoding
+        PoolKey memory key = PoolKey({
+            currency0: callbackData.currency0,
+            currency1: callbackData.currency1,
+            fee: 0,
+            tickSpacing: 0,
+            hooks: this
+        });
+        PoolId poolId = key.toId();
+        
+        // Initialize or update real reserves
+        s_realReserves[poolId][0] += callbackData.amountEach;
+        s_realReserves[poolId][1] += callbackData.amountEach;
+        s_initialized[poolId] = true;
+
         return "";
     }
 
@@ -183,6 +231,16 @@ contract StealthPoolHook is BaseHook {
     function _take(Currency currency, address recipient, uint256 amount, bool claims) internal {
         claims ? poolManager.mint(recipient, currency.toId(), amount) : poolManager.take(currency, recipient, amount);
     }
+
+    /**
+     * @notice Calculate swap fee based on amount
+     * @param absAmount Absolute amount being swapped
+     * @return Fee amount in same units as input
+     */
+    function _calculateFee(int128 absAmount) internal pure returns (int128) {
+        return int128(uint128((uint128(absAmount) * SWAP_FEE_BASIS_POINTS) / BASIS_POINTS_DIVISOR));
+    }
+
     function _beforeSwap(
         address sender,
         PoolKey calldata key,
@@ -199,7 +257,7 @@ contract StealthPoolHook is BaseHook {
         if (isExactInput) {
             // User specifies exact input, hook deducts fee and provides less output
             absInputAmount = int128(-params.amountSpecified);
-            feeAmount = int128(uint128((uint128(absInputAmount) * SWAP_FEE_BASIS_POINTS) / BASIS_POINTS_DIVISOR));
+            feeAmount = _calculateFee(absInputAmount);
             absOutputAmount = absInputAmount - feeAmount;
 
             beforeSwapDelta = toBeforeSwapDelta(
@@ -209,7 +267,7 @@ contract StealthPoolHook is BaseHook {
         } else {
             // User specifies exact output, hook charges more input (includes fee)
             absOutputAmount = int128(params.amountSpecified);
-            feeAmount = int128(uint128((uint128(absOutputAmount) * SWAP_FEE_BASIS_POINTS) / BASIS_POINTS_DIVISOR));
+            feeAmount = _calculateFee(absOutputAmount);
             absInputAmount = absOutputAmount + feeAmount;
 
             beforeSwapDelta = toBeforeSwapDelta(
@@ -218,11 +276,14 @@ contract StealthPoolHook is BaseHook {
             );
         }
 
-        // Get current reserves for both currencies
-        uint256 balance0 = poolManager.balanceOf(address(this), key.currency0.toId());
-        uint256 balance1 = poolManager.balanceOf(address(this), key.currency1.toId());
+        PoolId poolId = key.toId();
         
-        // Check hook's claim token balance for output currency (prevents insufficient liquidity)
+        // Step 2: Use REAL reserves for circuit breaker (private tracking)
+        // Public PoolManager balances are ignored - we use our private mappings
+        uint256 balance0 = s_realReserves[poolId][0];
+        uint256 balance1 = s_realReserves[poolId][1];
+        
+        // Check hook's real reserve for output currency (prevents insufficient liquidity)
         uint256 outputBalance = params.zeroForOne ? balance1 : balance0;
         
         if (outputBalance < uint256(uint128(absOutputAmount))) {
@@ -258,28 +319,66 @@ contract StealthPoolHook is BaseHook {
             _take(key.currency0, address(this), uint256(uint128(absInputAmount)), true);
             _settle(key.currency1, address(this), uint256(uint128(absOutputAmount)), true);
 
+            // Step 2: Update real reserves after swap
+            s_realReserves[poolId][0] += uint256(uint128(absInputAmount));
+            s_realReserves[poolId][1] -= uint256(uint128(absOutputAmount));
+
+            // Step 1: Emit dummy values to prepare for stealth (real amounts hidden)
+            // TODO Step 3: Replace with proper stealth event emission
             emit HookSwap(
                 PoolId.unwrap(key.toId()),
                 sender,
-                -absInputAmount,
-                absOutputAmount,
-                uint128(feeAmount),
+                int128(1), // Dummy value
+                int128(1), // Dummy value
+                uint128(1), // Dummy fee
                 0
             );
         } else {
             _settle(key.currency0, address(this), uint256(uint128(absOutputAmount)), true);
             _take(key.currency1, address(this), uint256(uint128(absInputAmount)), true);
 
+            // Step 2: Update real reserves after swap
+            s_realReserves[poolId][0] -= uint256(uint128(absOutputAmount));
+            s_realReserves[poolId][1] += uint256(uint128(absInputAmount));
+
+            // Step 1: Emit dummy values to prepare for stealth (real amounts hidden)
+            // TODO Step 3: Replace with proper stealth event emission
             emit HookSwap(
                 PoolId.unwrap(key.toId()),
                 sender,
-                absOutputAmount,
-                -absInputAmount,
+                int128(1), // Dummy value
+                int128(1), // Dummy value
                 0,
-                uint128(feeAmount)
+                uint128(1) // Dummy fee
             );
         }
 
         return (this.beforeSwap.selector, beforeSwapDelta, 0);
+    }
+
+    /**
+     * @notice Post-swap hook for future dummy reserve updates
+     * @dev Step 1: Stub implementation, will be enhanced in Step 3
+     */
+    function _afterSwap(
+        address,
+        PoolKey calldata,
+        SwapParams calldata,
+        BalanceDelta,
+        bytes calldata
+    ) internal override returns (bytes4, int128) {
+        // Step 1: No-op, will add dummy reserve state updates in Step 3
+        return (this.afterSwap.selector, 0);
+    }
+
+    /**
+     * @notice Internal function to get real reserves for a pool
+     * @dev Step 2: Used internally for calculations, never exposed publicly
+     * @param poolId Pool identifier
+     * @return reserve0 Real reserve for currency0
+     * @return reserve1 Real reserve for currency1
+     */
+    function _getRealReserves(PoolId poolId) internal view returns (uint256 reserve0, uint256 reserve1) {
+        return (s_realReserves[poolId][0], s_realReserves[poolId][1]);
     }
 }
