@@ -29,7 +29,7 @@
 
 ---
 
-## The Comparison Table (Put This Everywhere)
+## The Comparison Table
 
 | Feature | Brens Protocol (2025) | Every Other "Private DeFi" Project |
 |---------|----------------------|-------------------------------------|
