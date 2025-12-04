@@ -38,27 +38,24 @@ pragma solidity ^0.8.26;
  *    - Rationale: Enables non-AMM pricing models (CSMM, future FHE calculations)
  *    - Critical: beforeSwapReturnDelta permission must be enabled
  * 
- * FHE INTEGRATION (Phase 2 - In Progress):
- * - Encrypted swap amounts tracked via euint64
- * - Circuit breaker currently uses plaintext for gas efficiency
- * - Future: Full reserve encryption (Phase 3)
- * - Current: Hybrid approach (encrypted amounts, plaintext circuit breaker)
+ * FHE READINESS:
+ * - Pure CSMM works with encrypted values (no iterative calculations)
+ * - Circuit breaker can compare encrypted reserves to encrypted thresholds
+ * - ERC-6909 balances can be replaced with euint64 tracking
+ * - Current implementation uses plaintext as foundation before FHE integration
  */
 
 import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
 import {PoolKey} from "v4-core/types/PoolKey.sol";
 import {PoolId} from "v4-core/types/PoolId.sol";
 import {Currency} from "v4-core/types/Currency.sol";
-import {CurrencySettler} from "@uniswap/v4-core/test/utils/CurrencySettler.sol";
+import {IERC20Minimal} from "v4-core/interfaces/external/IERC20Minimal.sol";
 import {Hooks} from "v4-core/libraries/Hooks.sol";
 import {BeforeSwapDelta, toBeforeSwapDelta} from "v4-core/types/BeforeSwapDelta.sol";
 import {BaseHook} from "v4-periphery/src/utils/BaseHook.sol";
 import {ModifyLiquidityParams, SwapParams} from "v4-core/types/PoolOperation.sol";
-import {FHE, Utils, euint64, InEuint64, ebool} from "@fhenixprotocol/cofhe-contracts/FHE.sol";
 
 contract PrivatePoolHook is BaseHook {
-    using CurrencySettler for Currency;
-
     error AddLiquidityThroughHook();
     error InsufficientLiquidity();
     error ExcessiveImbalance();
@@ -71,19 +68,13 @@ contract PrivatePoolHook is BaseHook {
     uint256 public constant MAX_IMBALANCE_RATIO = 7000; // 70%
     uint256 public constant MIN_IMBALANCE_RATIO = 3000; // 30%
 
-    // Encrypted swap volume tracking per pool (for privacy analytics)
-    mapping(PoolId => euint64) internal _encryptedVolume0;
-    mapping(PoolId => euint64) internal _encryptedVolume1;
-
     event HookSwap(
         bytes32 indexed id, // v4 pool id
         address indexed sender, // router of the swap
         int128 amount0,
         int128 amount1,
         uint128 hookLPfeeAmount0,
-        uint128 hookLPfeeAmount1,
-        euint64 encryptedAmount0, // FHE: encrypted swap amount for currency0
-        euint64 encryptedAmount1  // FHE: encrypted swap amount for currency1
+        uint128 hookLPfeeAmount1
     );
 
     event HookModifyLiquidity(
@@ -162,35 +153,36 @@ contract PrivatePoolHook is BaseHook {
     ) external onlyPoolManager returns (bytes memory) {
         CallbackData memory callbackData = abi.decode(data, (CallbackData));
 
-        callbackData.currency0.settle(
-            poolManager,
-            callbackData.sender,
-            callbackData.amountEach,
-            false
-        );
-        callbackData.currency1.settle(
-            poolManager,
-            callbackData.sender,
-            callbackData.amountEach,
-            false
-        );
+        // Settle: Transfer tokens from user to PoolManager
+        _settle(callbackData.currency0, callbackData.sender, callbackData.amountEach, false);
+        _settle(callbackData.currency1, callbackData.sender, callbackData.amountEach, false);
 
-        callbackData.currency0.take(
-            poolManager,
-            address(this),
-            callbackData.amountEach,
-            true
-        );
-        callbackData.currency1.take(
-            poolManager,
-            address(this),
-            callbackData.amountEach,
-            true
-        );
+        // Take: Mint ERC-6909 claim tokens to hook
+        _take(callbackData.currency0, address(this), callbackData.amountEach, true);
+        _take(callbackData.currency1, address(this), callbackData.amountEach, true);
 
         return "";
     }
 
+    function _settle(Currency currency, address payer, uint256 amount, bool burn) internal {
+        if (burn) {
+            poolManager.burn(payer, currency.toId(), amount);
+        } else if (currency.isAddressZero()) {
+            poolManager.settle{value: amount}();
+        } else {
+            poolManager.sync(currency);
+            if (payer != address(this)) {
+                IERC20Minimal(Currency.unwrap(currency)).transferFrom(payer, address(poolManager), amount);
+            } else {
+                IERC20Minimal(Currency.unwrap(currency)).transfer(address(poolManager), amount);
+            }
+            poolManager.settle();
+        }
+    }
+
+    function _take(Currency currency, address recipient, uint256 amount, bool claims) internal {
+        claims ? poolManager.mint(recipient, currency.toId(), amount) : poolManager.take(currency, recipient, amount);
+    }
     function _beforeSwap(
         address sender,
         PoolKey calldata key,
@@ -239,7 +231,7 @@ contract PrivatePoolHook is BaseHook {
         
         // Circuit breaker: Calculate reserve ratio after this swap
         // Prevents pool drainage during depeg events by blocking swaps that worsen imbalance
-        uint256 totalReserves = balance0 + balance1;
+        uint256 totalReserves = uint256(balance0) + uint256(balance1);
         uint256 newBalance0;
         uint256 newBalance1;
         
@@ -263,83 +255,31 @@ contract PrivatePoolHook is BaseHook {
         }
 
         if (params.zeroForOne) {
-            key.currency0.take(
-                poolManager,
-                address(this),
-                uint256(uint128(absInputAmount)),
-                true
-            );
-
-            key.currency1.settle(
-                poolManager,
-                address(this),
-                uint256(uint128(absOutputAmount)),
-                true
-            );
-
-            // FHE: Track encrypted volumes for privacy-preserving analytics
-            PoolId poolId = key.toId();
-            euint64 encAmount0 = FHE.asEuint64(uint64(uint128(absInputAmount)));
-            euint64 encAmount1 = FHE.asEuint64(uint64(uint128(absOutputAmount)));
-            
-            _encryptedVolume0[poolId] = FHE.add(_encryptedVolume0[poolId], encAmount0);
-            _encryptedVolume1[poolId] = FHE.add(_encryptedVolume1[poolId], encAmount1);
+            _take(key.currency0, address(this), uint256(uint128(absInputAmount)), true);
+            _settle(key.currency1, address(this), uint256(uint128(absOutputAmount)), true);
 
             emit HookSwap(
-                PoolId.unwrap(poolId),
+                PoolId.unwrap(key.toId()),
                 sender,
                 -absInputAmount,
                 absOutputAmount,
                 uint128(feeAmount),
-                0,
-                encAmount0,
-                encAmount1
+                0
             );
         } else {
-            key.currency0.settle(
-                poolManager,
-                address(this),
-                uint256(uint128(absOutputAmount)),
-                true
-            );
-            key.currency1.take(
-                poolManager,
-                address(this),
-                uint256(uint128(absInputAmount)),
-                true
-            );
-
-            // FHE: Track encrypted volumes for privacy-preserving analytics
-            PoolId poolId = key.toId();
-            euint64 encAmount0 = FHE.asEuint64(uint64(uint128(absOutputAmount)));
-            euint64 encAmount1 = FHE.asEuint64(uint64(uint128(absInputAmount)));
-            
-            _encryptedVolume0[poolId] = FHE.add(_encryptedVolume0[poolId], encAmount0);
-            _encryptedVolume1[poolId] = FHE.add(_encryptedVolume1[poolId], encAmount1);
+            _settle(key.currency0, address(this), uint256(uint128(absOutputAmount)), true);
+            _take(key.currency1, address(this), uint256(uint128(absInputAmount)), true);
 
             emit HookSwap(
-                PoolId.unwrap(poolId),
+                PoolId.unwrap(key.toId()),
                 sender,
                 absOutputAmount,
                 -absInputAmount,
                 0,
-                uint128(feeAmount),
-                encAmount0,
-                encAmount1
+                uint128(feeAmount)
             );
         }
 
         return (this.beforeSwap.selector, beforeSwapDelta, 0);
-    }
-
-    /**
-     * @notice Get encrypted volume for a specific pool and currency
-     * @dev Returns encrypted uint64 representing cumulative swap volume
-     * @param poolId The pool ID to query
-     * @param currency0 If true, returns volume for currency0; otherwise currency1
-     * @return Encrypted cumulative volume (euint64)
-     */
-    function getEncryptedVolume(PoolId poolId, bool currency0) external view returns (euint64) {
-        return currency0 ? _encryptedVolume0[poolId] : _encryptedVolume1[poolId];
     }
 }
