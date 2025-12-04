@@ -16,3 +16,6 @@
 [submodule "lib/fhenix.js"]
 	path = lib/fhenix.js
 	url = https://github.com/FhenixProtocol/fhenix.js
+[submodule "lib/hookmate"]
+	path = lib/hookmate
+	url = https://github.com/akshatmittal/hookmate
