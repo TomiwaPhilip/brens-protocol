@@ -541,19 +541,6 @@ testFuzzCircuitBreaker(uint256 bal0, uint256 bal1)
 
 ---
 
-## Deployment Checklist
-
-- [ ] Deploy on testnet (Base Sepolia) first
-- [ ] Verify circuit breaker works at thresholds
-- [ ] Test with actual TPT (pUSDC) tokens
-- [ ] Monitor event emissions for accuracy
-- [ ] Audit circuit breaker logic
-- [ ] Deploy on Fhenix Helium for FHE testing
-- [ ] Integrate with frontend UI
-- [ ] Document LP withdrawal mechanism (Phase 2)
-
----
-
 ## References
 
 - [Uniswap v4 Hook Documentation](https://docs.uniswap.org/contracts/v4/overview)
