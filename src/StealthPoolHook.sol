@@ -55,7 +55,7 @@ import {BeforeSwapDelta, toBeforeSwapDelta} from "v4-core/types/BeforeSwapDelta.
 import {BaseHook} from "v4-periphery/src/utils/BaseHook.sol";
 import {ModifyLiquidityParams, SwapParams} from "v4-core/types/PoolOperation.sol";
 
-contract PrivatePoolHook is BaseHook {
+contract StealthPoolHook is BaseHook {
     error AddLiquidityThroughHook();
     error InsufficientLiquidity();
     error ExcessiveImbalance();
