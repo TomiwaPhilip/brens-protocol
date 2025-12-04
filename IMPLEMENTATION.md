@@ -137,12 +137,21 @@ brens-protocol/
 - [x] Deployment scripts
 - [x] Test suite
 
-### Phase 2 (Next Steps)
+### Phase 2 (Current - Dark Pool Foundation)
+- [x] StealthPoolHook.sol - CSMM dark pool (285 lines)
+  - Circuit breaker protection
+  - Custom liquidity provision
+  - 1:1 swap pricing with 0.1% fees
+  - FHE-ready architecture (plaintext foundation)
 - [ ] Wrapper contract for Public→Private token conversion
-- [ ] Uniswap v4 hooks for Dark Pool trading
+- [ ] StealthPoolHook testnet deployment
+- [ ] Frontend integration (brens-protocol-ui)
+
+### Phase 3 (Future - FHE Integration)
+- [ ] Encrypted reserves (euint64) in StealthPoolHook
+- [ ] Encrypted swap amounts
 - [ ] Encrypted limit orders ("Iceberg" feature)
 - [ ] Threshold FHE for indicated balances
-- [ ] Frontend integration (brens-protocol-ui)
 
 ## Testing Notes
 

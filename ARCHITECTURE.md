@@ -256,7 +256,7 @@ brens-protocol/
 ├── src/                          # Smart Contracts
 │   ├── FHERC20.sol              # TPT implementation (222 lines)
 │   ├── TPTFactory.sol           # CREATE2 factory (284 lines)
-│   ├── PrivatePoolHook.sol      # Dark pool hook (220 lines)
+│   ├── StealthPoolHook.sol      # Dark pool hook (285 lines) - FHE integration planned
 │   └── IFHERC20.sol             # Standard interface (37 lines)
 │
 ├── script/                       # Deployment Scripts
@@ -283,7 +283,7 @@ brens-protocol/
 
 ## Dark Pool Hook Architecture
 
-For detailed documentation on the PrivatePoolHook design, see [HOOK_DESIGN.md](./HOOK_DESIGN.md).
+For detailed documentation on the StealthPoolHook design, see [HOOK_DESIGN.md](./HOOK_DESIGN.md).
 
 **Key Features:**
 - **Constant Sum Market Maker (CSMM):** 1:1 pricing instead of AMM curves

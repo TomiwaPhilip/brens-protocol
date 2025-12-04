@@ -1,8 +1,10 @@
-# PrivatePoolHook Design Documentation
+# StealthPoolHook Design Documentation
 
 ## Executive Summary
 
-The PrivatePoolHook is a Uniswap v4 hook that implements a **dark pool** architecture for private token trading. It completely bypasses Uniswap's AMM pricing mechanism, implementing instead a Constant Sum Market Maker (CSMM) with circuit breaker protection, optimized for FHE (Fully Homomorphic Encryption) integration.
+The StealthPoolHook is a Uniswap v4 hook that implements a **dark pool** architecture for private token trading. It completely bypasses Uniswap's AMM pricing mechanism, implementing instead a Constant Sum Market Maker (CSMM) with circuit breaker protection.
+
+**Note**: This is the production-ready plaintext foundation. FHE (Fully Homomorphic Encryption) integration for fully encrypted reserves and swap amounts is planned for Phase 2.
 
 ---
 
@@ -354,9 +356,9 @@ euint64 encryptedOutput = FHE.sub(encryptedInput, encryptedFee);
 
 ---
 
-## Comparison: PrivatePoolHook vs Alternatives
+## Comparison: StealthPoolHook vs Alternatives
 
-| Feature | PrivatePoolHook | Uniswap v4 Standard | Curve StableSwap |
+| Feature | StealthPoolHook | Uniswap v4 Standard | Curve StableSwap |
 |---------|----------------|---------------------|------------------|
 | **Pricing Model** | CSMM (1:1) | Constant Product | Hybrid Curve |
 | **Gas Cost** | Medium | Low | High |

@@ -202,7 +202,7 @@ brens-protocol/
 ├── lib/
 │   ├── forge-std/           # Foundry standard library
 │   ├── fhenix-contracts/    # FHE operations library
-│   └── v4-periphery/        # Uniswap v4 (for future Dark Pool)
+│   └── v4-periphery/        # Uniswap v4 (StealthPoolHook - FHE integration planned)
 └── foundry.toml             # Foundry configuration
 ```
 

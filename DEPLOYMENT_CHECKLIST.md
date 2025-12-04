@@ -115,19 +115,29 @@
 
 ## 🔄 Phase 2: Dark Pool & Advanced Features
 
+### Current Status
+- [x] **StealthPoolHook** - Dark pool CSMM implementation (285 lines)
+  - Circuit breaker protection (70/30 threshold)
+  - Custom liquidity provision
+  - BeforeSwap delta override
+  - 0.1% fee mechanism
+  - **Note**: FHE integration for encrypted reserves planned for Phase 3
+
 ### Next Implementations Needed
 - [ ] **Wrapper Contract** - Convert public tokens → TPTs
   - WETH wrapper
   - USDC wrapper
   - Generic ERC20 wrapper
 
-- [ ] **Uniswap v4 Hook** - Dark Pool trading
-  - Custom accounting hook
-  - Encrypted AMM logic
-  - Shielded pairs
-  - NoOp settlement
+- [ ] **Hook Deployment** - Deploy StealthPoolHook to testnet
+  - Deploy to Base Sepolia for testing
+  - Integration with TPTs
+  - Liquidity provision testing
+  - Swap execution testing
 
-- [ ] **Advanced Features**
+- [ ] **Advanced Features (Phase 3 - FHE Integration)**
+  - Encrypted reserves in StealthPoolHook (euint64)
+  - Encrypted swap amounts
   - Encrypted limit orders
   - Threshold FHE for indicated balances
   - Encrypted vesting
