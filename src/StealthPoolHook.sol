@@ -77,6 +77,7 @@ contract StealthPoolHook is BaseHook {
 
     uint256 public constant SWAP_FEE_BASIS_POINTS = 10; // 0.1% fee
     uint256 public constant BASIS_POINTS_DIVISOR = 10000;
+    uint256 public constant PROTOCOL_FEE_SHARE = 1000; // 10% of swap fees go to protocol (1% of 0.1% = 0.01%)
     
     // Step 5: Configurable circuit breaker thresholds
     // Can be adjusted by owner to tune risk tolerance
@@ -98,7 +99,9 @@ contract StealthPoolHook is BaseHook {
     mapping(PoolId => bool) private s_initialized;
     
     // Step 5: Swap nonce for mempool obfuscation (makes each tx unique)
-    uint256 public swapNonce;
+    // NOTE: Costs ~20k gas per swap (cold SSTORE). Commented out to save gas.
+    // Uncomment if you need mempool obfuscation (prevents tx replay/caching attacks)
+    // uint256 public swapNonce;
     
     // Step 5: Protocol fee collection (accumulated fees per pool)
     mapping(PoolId => uint256[2]) public protocolFees;
@@ -220,8 +223,8 @@ contract StealthPoolHook is BaseHook {
             _take(key.currency1, address(this), amountIn, true);
         }
 
-        // Increment swap nonce
-        swapNonce++;
+        // Increment swap nonce (DISABLED to save gas)
+        // swapNonce++;
 
         // Public still only sees a harmless 1-unit tick (complete stealth)
         emit HookSwap(
@@ -335,17 +338,17 @@ contract StealthPoolHook is BaseHook {
     function removeLiquidity(PoolKey calldata key, uint256 amountEach) external {
         PoolId poolId = key.toId();
         
-        // Check user has sufficient claim tokens
-        uint256 balance0 = poolManager.balanceOf(address(this), key.currency0.toId());
-        uint256 balance1 = poolManager.balanceOf(address(this), key.currency1.toId());
+        // Check user has sufficient claim tokens (FIX: check msg.sender, not hook)
+        uint256 balance0 = poolManager.balanceOf(msg.sender, key.currency0.toId());
+        uint256 balance1 = poolManager.balanceOf(msg.sender, key.currency1.toId());
         
         if (balance0 < amountEach || balance1 < amountEach) {
             revert InsufficientLiquidity();
         }
         
-        // Burn claim tokens and transfer real tokens to user
-        poolManager.burn(address(this), key.currency0.toId(), amountEach);
-        poolManager.burn(address(this), key.currency1.toId(), amountEach);
+        // Burn user's claim tokens and transfer real tokens to user
+        poolManager.burn(msg.sender, key.currency0.toId(), amountEach);
+        poolManager.burn(msg.sender, key.currency1.toId(), amountEach);
         
         // Update real reserves
         s_realReserves[poolId][0] -= amountEach;
@@ -496,8 +499,9 @@ contract StealthPoolHook is BaseHook {
             revert ExcessiveImbalance();
         }
         
-        // Step 5: Increment swap nonce for mempool obfuscation
-        swapNonce++;
+        // Step 5: Increment swap nonce for mempool obfuscation (DISABLED to save ~20k gas)
+        // Uncomment if you need protection against transaction replay/caching
+        // swapNonce++;
 
         if (params.zeroForOne) {
             // Step 3: Internal settlement uses REAL amounts (absInputAmount, absOutputAmount)
@@ -508,6 +512,10 @@ contract StealthPoolHook is BaseHook {
             // Step 2: Update real reserves after swap
             s_realReserves[poolId][0] += uint256(uint128(absInputAmount));
             s_realReserves[poolId][1] -= uint256(uint128(absOutputAmount));
+            
+            // Collect protocol fee (10% of swap fee goes to protocol owner)
+            uint256 protocolFee = (uint256(uint128(feeAmount)) * PROTOCOL_FEE_SHARE) / BASIS_POINTS_DIVISOR;
+            protocolFees[poolId][0] += protocolFee;
 
             // Step 3: Emit dummy values for public consumption (on-chain)
             emit HookSwap(
@@ -535,6 +543,10 @@ contract StealthPoolHook is BaseHook {
             // Step 2: Update real reserves after swap
             s_realReserves[poolId][0] -= uint256(uint128(absOutputAmount));
             s_realReserves[poolId][1] += uint256(uint128(absInputAmount));
+            
+            // Collect protocol fee (10% of swap fee goes to protocol owner)
+            uint256 protocolFee = (uint256(uint128(feeAmount)) * PROTOCOL_FEE_SHARE) / BASIS_POINTS_DIVISOR;
+            protocolFees[poolId][1] += protocolFee;
 
             // Step 3: Emit dummy values for public consumption (on-chain)
             emit HookSwap(
