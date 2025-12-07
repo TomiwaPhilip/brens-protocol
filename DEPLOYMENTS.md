@@ -12,6 +12,7 @@ This document tracks all deployments of the ConstantSumHook protocol across diff
 - **Token B**: `0x70F648C883566493fbaaD3D329815eABbDE8AB31` (Token A)
 - **SimpleSwapRouter**: `0x0ae5F4aFe70f0A9351D8c0fd017183722437eEdf`
 - **Pool Manager**: `0x00B036B58a818B1BC34d502D3fE730Db729e62AC` (Protocol Contract)
+- **Faucet Address**: `0xE6aFe6a0243609620882C3169546761a9dFB2E2B`
 
 **Pool Configuration:**
 - **Pool ID**: `0xca8a8c8aff8c5cc19c46c5c4a2ae8d8dc32e28e0e5ecab74c3a3d40ab97d3524`
@@ -20,6 +21,13 @@ This document tracks all deployments of the ConstantSumHook protocol across diff
 - **Circuit Breaker**: 70/30 ratio limit
 - **Owner**: `0x4e59b44847b379578588920cA78FbF26c0B4956C` (CREATE2_DEPLOYER)
 - **Keeper**: Not set (address(0))
+
+**Test Token Faucet:**
+- **Faucet Address**: `0xE6aFe6a0243609620882C3169546761a9dFB2E2B`
+- **Claim Amount**: 1,000 tokens each (TokenA + TokenB)
+- **Total Funded**: 100,000 tokens each
+- **Max Claims**: 100 users
+- **Status**: Active and funded
 
 **Features:**
 - ✅ 1:1 constant sum pricing
@@ -127,6 +135,20 @@ cast call 0x6145f3Cba8c95A572548e3Cf47C8CEc729CC2888 \
   "getReserves((address,address,uint24,int24,address))" \
   "(0x4eccff261b376277C521b25aEdC2446239e777Df,0x70F648C883566493fbaaD3D329815eABbDE8AB31,3000,60,0x6145f3Cba8c95A572548e3Cf47C8CEc729CC2888)" \
   --rpc-url https://sepolia.unichain.org
+```
+
+### Claim Test Tokens (Faucet)
+```bash
+# Check if address has claimed
+cast call 0xE6aFe6a0243609620882C3169546761a9dFB2E2B \
+  "hasClaimed(address)" <YOUR_ADDRESS> \
+  --rpc-url https://sepolia.unichain.org
+
+# Claim 1000 tokens each (once per address)
+cast send 0xE6aFe6a0243609620882C3169546761a9dFB2E2B \
+  "claimTokens()" \
+  --rpc-url https://sepolia.unichain.org \
+  --private-key $PRIVATE_KEY
 ```
 
 ### Update Circuit Breaker
