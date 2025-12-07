@@ -1,322 +1,249 @@
-# Brens Protocol
+# Brens Protocol - ConstantSumHook
 
-> **Privacy without the PhD.**
+> **Simple 1:1 stablecoin swaps on Uniswap v4**
 
-## One-Sentence Mission
+## Overview
 
-Brens makes privacy in DeFi so simple that you don't need FHE, ZK, TEEs, EigenLayer, Fhenix, Secret, Aztec, or any "crypto magic" ever again.
+A gas-efficient Constant Sum Market Maker (CSMM) hook for Uniswap v4 that provides 1:1 swaps ideal for stablecoin pairs with circuit breaker protection against depeg events.
 
-## Core USP
+## What is CSMM?
 
-**"True dark pools on Uniswap v4 using nothing but vanilla Solidity and one clever hook."**
+Unlike traditional AMMs that use `x * y = k` (constant product), CSMM uses `x + y = k` (constant sum):
 
----
+- **Traditional AMM**: Price changes with every trade (slippage)
+- **CSMM**: Always 1:1 pricing (zero slippage for pegged assets)
 
-## Why Brens Protocol Wins
+This makes CSMM perfect for:
+- Stablecoin pairs (USDC/USDT, DAI/USDC)
+- Wrapped/native pairs (WETH/ETH, wBTC/renBTC)
+- Synthetic pegged assets
 
-| Feature | Brens Protocol (2025) | Every Other "Private DeFi" Project |
-|---------|----------------------|-------------------------------------|
-| **Privacy technology** | Pure Solidity + dummy deltas | FHE, ZK-SNARKs, TEEs, MPC, encrypted tokens |
-| **Tools you need** | Just Uniswap v4 hooks | Fhenix, Zama, EigenLayer, RISC Zero, Aztec |
-| **Gas overhead** | <100k per swap (same as normal) | 300k – 3M+ gas, 20–100× slower |
-| **Works today** | ✅ Yes, mainnet-ready | ❌ "Testnet" or "coming 2026" |
-| **Hidden reserves & trade sizes** | ✅ Yes (mathematically provable) | ⚠️ Only hides sender OR amounts |
-| **Deployment** | `forge create` + one tx | Multi-month audits, custom VMs, new languages |
-| **Trusted assumptions** | One keeper (same as OTC desks) | Trusted hardware, new crypto, sequencer trust |
+## Key Features
 
----
+### ✅ Zero Slippage 1:1 Pricing
+Every swap maintains exact 1:1 ratio regardless of trade size.
 
-## How It Works (Simple Version)
+### ✅ 0.1% Swap Fee
+- 90% goes to liquidity providers
+- 10% goes to protocol (withdrawable by owner)
+- Fees compound in LP reserves
 
-### The Problem
-Traditional DEXs broadcast everything:
-- "Alice swapped 1,000,000 USDC for pUSDC" ← MEV bots attack
-- Pool reserves: "10M USDC, 5M pUSDC" ← Everyone knows imbalance
+### ✅ Circuit Breaker Protection
+Prevents pool drainage during depeg events:
+- Blocks swaps when reserves exceed 70/30 imbalance
+- Configurable thresholds by owner
+- Directional: only stops swaps that worsen imbalance (allows arbitrage)
 
-### The Brens Solution
-StealthPoolHook reports dummy values:
-- On-chain: "Someone swapped 1 unit for 1 unit" ← Meaningless noise
-- Real reserves: Hidden in private mappings ← No one knows true state
-- Settlement: Happens with real amounts internally ← Actually works
+### ✅ Gas-Efficient ERC-6909
+Uses Uniswap v4's native claim token system for optimal gas usage.
 
-### The Result
-- ✅ Every swap looks identical (±1 delta)
-- ✅ Pool reserves always report "1M units" (dummy value)
-- ✅ MEV bots see uniform noise (cannot attack)
-- ✅ Market makers rebalance in stealth (no front-running)
-- ✅ Zero cryptographic complexity (pure Solidity)
+## Quick Start
 
----
-
-## The Core Contract: StealthPoolHook
-
-**File:** `src/StealthPoolHook.sol` (600 lines of vanilla Solidity)
-
-### What It Does
-
-1. **DUMMY_DELTA Masking**
-   - Every swap returns `±1` to Uniswap's PoolManager
-   - Internally settles with real amounts (e.g., 1M USDC)
-   - On-chain observers see uniform noise
-
-2. **Private Reserve Tracking**
-   - Real balances: `mapping(PoolId => uint256[2]) private s_realReserves`
-   - Public queries: Always return `DUMMY_RESERVE` (1M units)
-   - Circuit breaker uses real reserves (safety without leaking info)
-
-3. **Dual-Event System**
-   - `HookSwap`: Public event with dummy values (±1)
-   - `StealthSwap`: Private event with real amounts (keeper-only)
-   - Compliance-ready without sacrificing privacy
-
-4. **Keeper Rebalancing**
-   - Market maker injects 300k to restore 50/50 balance
-   - Appears as normal ±1 swap on-chain
-   - Zero information leakage to adversarial traders
-
-5. **CSMM Pricing (x+y=k)**
-   - 1:1 swaps with 0.1% fee
-   - Circuit breaker at 70/30 (prevents pool drainage)
-   - Perfect for stablecoins and LRT pairs
-
-### Key Metrics
-
-- **Gas per swap:** ~100k (17% cheaper than standard Uniswap v4)
-- **MEV resistance:** 100% (bots see meaningless ±1 deltas)
-- **Privacy level:** Mathematically provable (no trade size leakage)
-- **Deployment time:** <5 minutes
-- **Lines of code:** 600 (no dependencies on FHE/ZK libraries)
-
-### Why This Approach Wins
-
-**Traditional privacy projects:**
-```solidity
-// Need custom VM, new language, months of audits
-import "@fhenix/fhe-library"; // 50k LOC, gas unknown
-import "@aztec/noir"; // New language, learning curve
-import "@eigenlayer/avs"; // Trust AVS, sequencer, hardware
-```
-
-**Brens Protocol:**
-```solidity
-// Just normal Solidity
-BeforeSwapDelta delta = toBeforeSwapDelta(DUMMY_DELTA, -DUMMY_DELTA);
-// Done. That's the entire trick.
-```
-
----
-
-## Deployment (5 Minutes)
-
-### Prerequisites
+### Installation
 ```bash
-# Install Foundry
-curl -L https://foundry.paradigm.xyz | bash
-foundryup
-
-# Clone repo
 git clone https://github.com/TomiwaPhilip/brens-protocol
 cd brens-protocol
 forge install
 ```
 
-### Deploy StealthPoolHook
+### Basic Usage
+```solidity
+// Add liquidity (equal amounts)
+hook.addLiquidity(poolKey, 1_000_000 * 1e18);
 
-```bash
-# Set your private key
-export PRIVATE_KEY=your_private_key_here
+// Swap 100 USDC for ~99.9 USDT (0.1% fee)
+token0.approve(address(hook), 100 * 1e18);
+hook.performSwap(poolKey, true, 100 * 1e18);
 
-# Deploy to Base (or any EVM chain with Uniswap v4)
-forge create src/StealthPoolHook.sol:StealthPoolHook \
-  --rpc-url https://mainnet.base.org \
-  --private-key $PRIVATE_KEY \
-  --constructor-args <POOL_MANAGER_ADDRESS>
-
-# That's it. Hook deployed.
+// Remove liquidity
+hook.removeLiquidity(poolKey, 500_000 * 1e18);
 ```
 
-### Seed Initial Liquidity
+## How It Works
 
-```bash
-# Call addLiquidity(poolKey, amountEach)
-cast send $HOOK_ADDRESS "addLiquidity((address,address,uint24,int24,address),uint256)" \
-  "($USDC,$PUSDC,0,0,$HOOK_ADDRESS)" \
-  1000000000000000000000000 \ # 1M USDC
-  --rpc-url https://mainnet.base.org \
-  --private-key $PRIVATE_KEY
+### Liquidity Provision
+```solidity
+// Add equal amounts of both tokens
+hook.addLiquidity(poolKey, 1_000_000 * 1e18);
 
-# Done. Pool live with hidden reserves.
+// Receive ERC-6909 claim tokens representing your share
+// Can withdraw at any time by burning claim tokens
 ```
 
-### Run Keeper Bot (Optional)
+### Swaps
+```solidity
+// 1:1 pricing with 0.1% fee
+Input:  100 USDC
+Output: 99.9 USDT  (0.1 USDC fee)
 
-```bash
-# Monitor StealthSwap events off-chain
-# Inject capital when reserves drift from 50/50
-
-# Simple keeper example:
-while true; do
-  ratio=$(get_reserve_ratio_from_events)
-  if [[ $ratio > 0.6 || $ratio < 0.4 ]]; then
-    cast send $HOOK_ADDRESS "rebalance(...)" \
-      --private-key $KEEPER_KEY
-  fi
-  sleep 60
-done
+// Circuit breaker activates if reserves become too imbalanced
+// Example: Prevents USDC depeg from draining all USDT
 ```
 
----
+## Circuit Breaker
 
-## Use Cases (Real Numbers)
+### How It Works
+1. **Track Reserves**: Hook maintains accurate reserve counts
+2. **Calculate Ratio**: Check if swap would create imbalance > 70/30
+3. **Block if Needed**: Prevent swaps that worsen imbalance
+4. **Allow Arbitrage**: Permit swaps that restore balance
 
-### 1. Institutional Block Trades
-- **Problem:** $10M swap visible → $30k MEV loss
-- **Brens:** Swap appears as ±1 → $0 MEV loss
-- **Savings:** $30k per trade (0.3% efficiency gain)
+### Example Scenario
+```
+Current: 60% USDC, 40% USDT  (acceptable)
+Swap:    100 USDC → 99.9 USDT
+Result:  61% USDC, 39% USDT  ✅ Allowed (still under 70%)
 
-### 2. Market Maker Rebalancing
-- **Problem:** 300k rebalance visible → $15k front-run cost
-- **Brens:** Keeper injects 300k stealthily → $0 leakage
-- **Impact:** 20x more MM participation (lower cost)
+Current: 69% USDC, 31% USDT  (near limit)
+Swap:    100 USDC → 99.9 USDT  
+Result:  70% USDC, 30% USDT  ❌ BLOCKED (hits threshold)
 
-### 3. DAO Treasury Management
-- **Problem:** $5M diversification → 2% adversarial price pump
-- **Brens:** Trade size hidden → fair 1:1 pricing
-- **Savings:** $100k per treasury operation
+// But arbitrage in opposite direction is allowed:
+Swap:    100 USDT → 99.9 USDC
+Result:  68% USDC, 32% USDT  ✅ Allowed (improves balance)
+```
 
-### 4. Whale Privacy
-- **Problem:** 500k swap → viral tweet → copycats push price 5%
-- **Brens:** Indistinguishable from retail → no attention
-- **Benefit:** Complete strategy privacy
+## Deployment
 
-### 5. Stablecoin Arbitrage
-- **Problem:** 10M arb visible → competitors copy → profit split 60%
-- **Brens:** Arb appears as ±1 → full profit captured
-- **Gain:** $120k additional per opportunity
-
-See [STEALTH_POOL_USE_CASES.md](./STEALTH_POOL_USE_CASES.md) for detailed analysis.
-
----
-
-## Development
-
-### Build & Test
+### Prerequisites
 ```bash
-# Compile contracts
-forge build
+forge install
+```
 
-# Run tests
-forge test -vvv
+### Deploy Hook
+```solidity
+// 1. Mine address with correct permissions
+uint160 flags = uint160(
+    Hooks.BEFORE_INITIALIZE_FLAG |
+    Hooks.BEFORE_ADD_LIQUIDITY_FLAG |
+    Hooks.BEFORE_SWAP_FLAG |
+    Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG
+);
 
-# Gas report
+(address hookAddress, bytes32 salt) = HookMiner.find(
+    deployer,
+    flags,
+    type(ConstantSumHook).creationCode,
+    abi.encode(poolManager)
+);
+
+// 2. Deploy with correct address
+ConstantSumHook hook = new ConstantSumHook{salt: salt}(poolManager);
+```
+
+### Initialize Pool
+```solidity
+PoolKey memory key = PoolKey({
+    currency0: Currency.wrap(address(token0)),
+    currency1: Currency.wrap(address(token1)),
+    fee: 3000,
+    tickSpacing: 60,
+    hooks: IHooks(address(hook))
+});
+
+poolManager.initialize(key, SQRT_PRICE_1_1);
+```
+
+## API Reference
+
+### For Liquidity Providers
+
+#### addLiquidity
+```solidity
+function addLiquidity(PoolKey calldata key, uint256 amountEach) external
+```
+Deposit equal amounts of both tokens and receive ERC-6909 claim tokens.
+
+#### removeLiquidity
+```solidity
+function removeLiquidity(PoolKey calldata key, uint256 amountEach) external
+```
+Burn claim tokens and withdraw tokens.
+
+#### getReserves
+```solidity
+function getReserves(PoolKey calldata key) external view returns (uint256, uint256)
+```
+View current pool reserves.
+
+### For Protocol Owner
+
+#### withdrawProtocolFees
+```solidity
+function withdrawProtocolFees(PoolKey calldata key) external onlyOwner
+```
+Collect accumulated protocol fees.
+
+#### setCircuitBreakerThresholds
+```solidity
+function setCircuitBreakerThresholds(uint256 newMaxRatio, uint256 newMinRatio) external onlyOwner
+```
+Update circuit breaker parameters (in basis points).
+
+#### transferOwnership
+```solidity
+function transferOwnership(address newOwner) external onlyOwner
+```
+Transfer contract ownership.
+
+## Testing
+
+```bash
+# Run all tests
+forge test
+
+# Run with gas reports
 forge test --gas-report
 
-# Deploy locally
-anvil # Terminal 1
-forge script script/DeployStealthPool.s.sol --broadcast --rpc-url http://127.0.0.1:8545 # Terminal 2
+# Test specific functionality
+forge test --match-test testSwap -vvv
 ```
 
-### Project Structure
+## Gas Costs
+
+| Operation | Gas Cost |
+|-----------|----------|
+| Add Liquidity | ~150k |
+| Remove Liquidity | ~120k |
+| Swap (first time) | ~100k |
+| Swap (subsequent) | ~80k |
+
+## Security
+
+### ✅ Protections
+- Circuit breaker prevents depeg drainage
+- Owner controls for emergency adjustments
+- Symmetric liquidity requirements
+- Fee accounting prevents manipulation
+
+### ⚠️ Considerations
+- Requires external arbitrage bots
+- No price discovery (assumes external peg)
+- Owner trust (consider timelock for production)
+
+### Audit Status
+⚠️ Not audited - use at your own risk
+
+## Repository Structure
+
 ```
 brens-protocol/
 ├── src/
-│   └── StealthPoolHook.sol      # The entire protocol (600 lines)
+│   └── ConstantSumHook.sol
 ├── test/
-│   └── StealthPoolHook.t.sol    # Comprehensive test suite
-├── script/
-│   └── DeployStealthPool.s.sol  # Deployment script
-├── docs/
-│   ├── HOOK_DESIGN.md           # Technical deep dive
-│   ├── STEALTH_POOL_USE_CASES.md # Use cases + industry impact
-│   └── ARCHITECTURE.md          # System overview
-└── archive/
-    └── tpt-fhe-legacy/          # Old FHE experiments (not used)
+│   └── utils/
+└── README.md
 ```
-
----
-
-## Security Model
-
-### What We Trust
-- **One keeper:** Same trust as any OTC desk (can rebalance pools)
-- **Solidity:** Standard EVM execution (no custom VMs)
-- **Uniswap v4:** Battle-tested PoolManager contract
-
-### What We DON'T Trust
-- ❌ No trusted hardware (TEEs, SGX)
-- ❌ No new cryptographic assumptions (FHE, ZK)
-- ❌ No sequencer trust (works on any EVM L1/L2)
-- ❌ No special infrastructure (no AVS, no coprocessors)
-
-### Attack Surface
-- **Circuit breaker:** Prevents pool drainage (configurable 70/30)
-- **Access control:** Owner and keeper roles with clear permissions
-- **Standard Solidity:** Auditable by any Solidity dev
-- **No black boxes:** Every line of code is readable
-
-### Bug Fixes (Production-Ready)
-- ✅ Fixed `removeLiquidity` balance check (was checking hook, now checks user)
-- ✅ Protocol fee collection implemented (10% of swap fees)
-- ✅ Gas optimized (removed `swapNonce++` for 20k gas savings)
-- ✅ Compiles with zero errors (only style warnings)
-
----
-
-## Taglines (Use These Everywhere)
-
-- "Privacy without the PhD."
-- "Dark pools for people who just want it to work."
-- "We removed the cryptography from private DeFi."
-- "The only privacy layer that ships in a weekend."
-- "True dark pools on Uniswap v4 using nothing but vanilla Solidity and one clever hook."
-
----
-
-## Who's Using It
-
-- **Wintermute:** Asked for keeper access (market maker rebalancing)
-- **Stablecoin teams:** Evaluating for OTC desk integration
-- **DAOs:** Testing for treasury management privacy
-- **Privacy-focused traders:** Mainnet pools coming Q1 2025
-
----
-
-## Documentation
-
-- **[COMPARISON.md](./COMPARISON.md)** - 🔥 **START HERE** - Complete competitive analysis vs FHE/ZK/TEE
-- **[HOOK_DESIGN.md](./HOOK_DESIGN.md)** - Technical deep dive into DUMMY_DELTA architecture
-- **[STEALTH_POOL_USE_CASES.md](./STEALTH_POOL_USE_CASES.md)** - Use cases with real dollar savings
-- **[ARCHITECTURE.md](./ARCHITECTURE.md)** - System architecture and design philosophy
-- **[DEPLOYMENT_CHECKLIST.md](./DEPLOYMENT_CHECKLIST.md)** - Pre-deployment security checklist
-
-**TL;DR:** If you want to understand WHY Brens wins, read [COMPARISON.md](./COMPARISON.md). If you want to understand HOW it works, read [HOOK_DESIGN.md](./HOOK_DESIGN.md).
-
----
-
-## Contributing
-
-We're looking for:
-- **Liquidity providers:** Seed initial pools (earn 0.09% on swaps)
-- **Keeper operators:** Run rebalancing bots (earn keeper fees)
-- **Integration partners:** Stablecoin teams, market makers, DAOs
-- **Auditors:** Security review for mainnet launch
-
-Open an issue or DM [@TomiwaPhilip](https://twitter.com/TomiwaPhilip_) on Twitter.
-
----
 
 ## License
 
 MIT
 
----
+## Resources
 
-## The Bottom Line
+- [Uniswap v4 Documentation](https://docs.uniswap.org/contracts/v4/overview)
+- [Hook Examples](https://github.com/Uniswap/v4-periphery)
 
-Every other privacy project is building rocket science that doesn't work.
+## Contributing
 
-We built boring Solidity that works today.
-
-That's the entire competitive advantage.
-
-**Deploy it. Seed it. Run it. Done.**
+Contributions welcome! Please open an issue or PR.
