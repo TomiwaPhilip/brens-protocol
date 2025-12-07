@@ -241,10 +241,6 @@ contract ConstantSumHookTest is Test, Deployers {
     }
 
     function test_removeLiquidity() public {
-        // TODO: removeLiquidity needs to use unlock callback pattern
-        // Currently reverts with ManagerLocked
-        vm.skip(true);
-        
         // Remove half the liquidity
         hook.removeLiquidity(key, 500e18);
 

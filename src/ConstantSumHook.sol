@@ -71,6 +71,7 @@ contract ConstantSumHook is BaseHook {
         uint256 amountEach;
         PoolKey key;
         address sender;
+        bool isRemove; // true for remove, false for add
     }
 
     modifier onlyOwner() {
@@ -198,7 +199,8 @@ contract ConstantSumHook is BaseHook {
                 CallbackData({
                     amountEach: amountEach,
                     key: key,
-                    sender: msg.sender
+                    sender: msg.sender,
+                    isRemove: false
                 })
             )
         );
@@ -227,65 +229,106 @@ contract ConstantSumHook is BaseHook {
             revert InsufficientLiquidity();
         }
 
-        // Update reserves
+        // Update reserves before unlock
         reserves[poolId][0] -= amountEach;
         reserves[poolId][1] -= amountEach;
 
-        // Burn claim tokens from hook
-        poolManager.burn(address(this), key.currency0.toId(), amountEach);
-        poolManager.burn(address(this), key.currency1.toId(), amountEach);
-
-        // Transfer real tokens to user
-        key.currency0.take(poolManager, msg.sender, amountEach, false);
-        key.currency1.take(poolManager, msg.sender, amountEach, false);
+        poolManager.unlock(
+            abi.encode(
+                CallbackData({
+                    amountEach: amountEach,
+                    key: key,
+                    sender: msg.sender,
+                    isRemove: true
+                })
+            )
+        );
 
         emit LiquidityRemoved(poolId, msg.sender, amountEach, amountEach);
     }
 
     /**
-     * @notice Callback for unlock() - handles liquidity deposits
+     * @notice Callback for unlock() - handles liquidity deposits and withdrawals
      */
     function unlockCallback(
         bytes calldata data
     ) external onlyPoolManager returns (bytes memory) {
         CallbackData memory callbackData = abi.decode(data, (CallbackData));
 
-        // Settle: transfer tokens from user to PoolManager (creates debit)
-        callbackData.key.currency0.settle(
-            poolManager,
-            callbackData.sender,
-            callbackData.amountEach,
-            false // Actually transfer tokens, not burn claims
-        );
-        callbackData.key.currency1.settle(
-            poolManager,
-            callbackData.sender,
-            callbackData.amountEach,
-            false
-        );
+        if (callbackData.isRemove) {
+            // REMOVE LIQUIDITY: Burn claim tokens, send real tokens to user
+            
+            // Settle: burn claim tokens from hook (creates debit for hook)
+            callbackData.key.currency0.settle(
+                poolManager,
+                address(this),
+                callbackData.amountEach,
+                true // Burn claim tokens from hook
+            );
+            callbackData.key.currency1.settle(
+                poolManager,
+                address(this),
+                callbackData.amountEach,
+                true
+            );
 
-        // Take: mint claim tokens to hook (creates credit, balances debit)
-        // The hook holds the liquidity as ERC-6909 claim tokens
-        callbackData.key.currency0.take(
-            poolManager,
-            address(this),
-            callbackData.amountEach,
-            true // Mint claim tokens
-        );
-        callbackData.key.currency1.take(
-            poolManager,
-            address(this),
-            callbackData.amountEach,
-            true
-        );
+            // Take: send real tokens to user (creates credit, balances debit)
+            callbackData.key.currency0.take(
+                poolManager,
+                callbackData.sender,
+                callbackData.amountEach,
+                false // Send actual tokens, not claims
+            );
+            callbackData.key.currency1.take(
+                poolManager,
+                callbackData.sender,
+                callbackData.amountEach,
+                false
+            );
+        } else {
+            // ADD LIQUIDITY: Transfer tokens from user, mint claim tokens to hook
+            
+            // Settle: transfer tokens from user to PoolManager (creates debit)
+            callbackData.key.currency0.settle(
+                poolManager,
+                callbackData.sender,
+                callbackData.amountEach,
+                false // Actually transfer tokens, not burn claims
+            );
+            callbackData.key.currency1.settle(
+                poolManager,
+                callbackData.sender,
+                callbackData.amountEach,
+                false
+            );
+
+            // Take: mint claim tokens to hook (creates credit, balances debit)
+            // The hook holds the liquidity as ERC-6909 claim tokens
+            callbackData.key.currency0.take(
+                poolManager,
+                address(this),
+                callbackData.amountEach,
+                true // Mint claim tokens
+            );
+            callbackData.key.currency1.take(
+                poolManager,
+                address(this),
+                callbackData.amountEach,
+                true
+            );
+        }
 
         // Update reserves for circuit breaker
         PoolId poolId = callbackData.key.toId();
 
-        reserves[poolId][0] += callbackData.amountEach;
-        reserves[poolId][1] += callbackData.amountEach;
+        if (!callbackData.isRemove) {
+            // Only update reserves for add operations
+            // Remove operations already updated reserves before unlock
+            reserves[poolId][0] += callbackData.amountEach;
+            reserves[poolId][1] += callbackData.amountEach;
+        }
 
-        return "";
+        return "\"";
     }
 
     // ========== SWAP LOGIC ==========
