@@ -9,6 +9,8 @@ import {Hooks} from "v4-core/libraries/Hooks.sol";
 import {HookMiner} from "v4-periphery/src/utils/HookMiner.sol";
 
 contract DeployConstantSumHook is Script {
+    address constant CREATE2_DEPLOYER = address(0x4e59b44847b379578588920cA78FbF26c0B4956C);
+
     function run() external {
         // Get pool manager address for the chain
         address poolManager = getPoolManager();
@@ -21,12 +23,14 @@ contract DeployConstantSumHook is Script {
             Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG
         );
 
+        bytes memory constructorArgs = abi.encode(poolManager);
+
         // Mine for hook address with correct flags
         (address hookAddress, bytes32 salt) = HookMiner.find(
-            address(this),
+            CREATE2_DEPLOYER,
             flags,
             type(ConstantSumHook).creationCode,
-            abi.encode(poolManager)
+            constructorArgs
         );
 
         vm.broadcast();
