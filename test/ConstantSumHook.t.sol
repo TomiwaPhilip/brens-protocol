@@ -112,15 +112,12 @@ contract ConstantSumHookTest is Test, Deployers {
         uint balanceOfTokenAAfter = key.currency0.balanceOfSelf();
         uint balanceOfTokenBAfter = key.currency1.balanceOfSelf();
 
-        // With 0.1% fee: 100 input -> 99.9 output
-        assertEq(balanceOfTokenBAfter - balanceOfTokenBBefore, 99.9e18);
+        // With no fees: 100 input -> 100 output (1:1)
+        assertEq(balanceOfTokenBAfter - balanceOfTokenBBefore, 100e18);
         assertEq(balanceOfTokenABefore - balanceOfTokenAAfter, 100e18);
     }
 
     function test_swap_exactOutput_zeroForOne() public {
-        // TODO: Fix exact output delta calculation
-        // Currently reverts with HookDeltaExceedsSwapAmount
-        vm.skip(true);
 
         PoolSwapTest.TestSettings memory settings = PoolSwapTest.TestSettings({
             takeClaims: false,
@@ -144,12 +141,8 @@ contract ConstantSumHookTest is Test, Deployers {
         uint balanceOfTokenBAfter = key.currency1.balanceOfSelf();
 
         assertEq(balanceOfTokenBAfter - balanceOfTokenBBefore, 100e18);
-        // With 0.1% fee: to get 100 output, need ~100.1 input
-        assertApproxEqRel(
-            balanceOfTokenABefore - balanceOfTokenAAfter,
-            100.1e18,
-            0.001e18 // 0.1% tolerance
-        );
+        // With no fees: to get 100 output, need exactly 100 input (1:1)
+        assertEq(balanceOfTokenABefore - balanceOfTokenAAfter, 100e18);
     }
 
     function test_swap_oneForZero() public {
@@ -174,8 +167,8 @@ contract ConstantSumHookTest is Test, Deployers {
         uint balanceOfTokenAAfter = key.currency0.balanceOfSelf();
         uint balanceOfTokenBAfter = key.currency1.balanceOfSelf();
 
-        // With 0.1% fee: 100 input -> 99.9 output
-        assertEq(balanceOfTokenAAfter - balanceOfTokenABefore, 99.9e18);
+        // With no fees: 100 input -> 100 output (1:1)
+        assertEq(balanceOfTokenAAfter - balanceOfTokenABefore, 100e18);
         assertEq(balanceOfTokenBBefore - balanceOfTokenBAfter, 100e18);
     }
 
@@ -295,32 +288,6 @@ contract ConstantSumHookTest is Test, Deployers {
         (uint256 reserve0, uint256 reserve1) = hook.getReserves(key);
         assertEq(reserve0, 1500e18);
         assertEq(reserve1, 1500e18);
-    }
-
-    function test_protocolFees() public {
-        PoolSwapTest.TestSettings memory settings = PoolSwapTest.TestSettings({
-            takeClaims: false,
-            settleUsingBurn: false
-        });
-
-        // Do a swap to generate fees
-        swapRouter.swap(
-            key,
-            SwapParams({
-                zeroForOne: true,
-                amountSpecified: -100e18,
-                sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
-            }),
-            settings,
-            ZERO_BYTES
-        );
-
-        // Check protocol fees accumulated
-        // Fee = 0.1% of 100 = 0.1
-        // Protocol fee = 10% of 0.1 = 0.01
-        PoolId poolId = key.toId();
-        uint256 protocolFee0 = hook.protocolFees(poolId, 0);
-        assertEq(protocolFee0, 0.01e18);
     }
 
     function test_ownership() public {

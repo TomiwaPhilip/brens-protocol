@@ -31,10 +31,8 @@ contract ConstantSumHook is BaseHook {
     error ExcessiveImbalance();
     error Unauthorized();
 
-    // Fee configuration
-    uint256 public constant SWAP_FEE_BASIS_POINTS = 10; // 0.1% = 10 bps
+    // Circuit breaker constants
     uint256 public constant BASIS_POINTS_DIVISOR = 10000;
-    uint256 public constant PROTOCOL_FEE_SHARE = 1000; // 10% of swap fees to protocol
 
     // Circuit breaker: prevent swaps when reserves become too imbalanced
     uint256 public maxImbalanceRatio = 7000; // 70% max (default)
@@ -47,15 +45,11 @@ contract ConstantSumHook is BaseHook {
     mapping(PoolId => uint256[2]) public reserves;
     mapping(PoolId => bool) public initialized;
 
-    // Protocol fee accumulation (withdrawable by owner)
-    mapping(PoolId => uint256[2]) public protocolFees;
-
     event Swap(
         PoolId indexed poolId,
         address indexed sender,
         uint256 amountIn,
         uint256 amountOut,
-        uint256 feeAmount,
         bool zeroForOne
     );
 
@@ -147,28 +141,6 @@ contract ConstantSumHook is BaseHook {
 
         maxImbalanceRatio = newMaxRatio;
         minImbalanceRatio = newMinRatio;
-    }
-
-    /**
-     * @notice Withdraw accumulated protocol fees
-     * @param key Pool key
-     */
-    function withdrawProtocolFees(PoolKey calldata key) external onlyOwner {
-        PoolId poolId = key.toId();
-        uint256 fee0 = protocolFees[poolId][0];
-        uint256 fee1 = protocolFees[poolId][1];
-
-        if (fee0 > 0) {
-            protocolFees[poolId][0] = 0;
-            // Burn claim tokens and take real tokens
-            key.currency0.settle(poolManager, address(this), fee0, true);
-            key.currency0.take(poolManager, owner, fee0, false);
-        }
-        if (fee1 > 0) {
-            protocolFees[poolId][1] = 0;
-            key.currency1.settle(poolManager, address(this), fee1, true);
-            key.currency1.take(poolManager, owner, fee1, false);
-        }
     }
 
     // ========== VIEW FUNCTIONS ==========
@@ -330,38 +302,41 @@ contract ConstantSumHook is BaseHook {
         PoolId poolId = key.toId();
         bool isExactInput = params.amountSpecified < 0;
 
-        // Calculate amounts with 0.1% fee
+        // Calculate amounts for 1:1 swap (no fees)
         uint128 absInputAmount;
         uint128 absOutputAmount;
-        uint128 feeAmount;
 
         if (isExactInput) {
             absInputAmount = uint128(uint256(-int256(params.amountSpecified)));
-            // Fee = input * 0.1%
-            feeAmount = uint128((uint256(absInputAmount) * SWAP_FEE_BASIS_POINTS) / BASIS_POINTS_DIVISOR);
-            absOutputAmount = absInputAmount - feeAmount; // 1:1 minus fee
+            absOutputAmount = absInputAmount; // exactly 1:1
         } else {
             absOutputAmount = uint128(uint256(int256(params.amountSpecified)));
-            // To get X output, need X / 0.999 input (accounting for 0.1% fee)
-            absInputAmount = uint128((uint256(absOutputAmount) * BASIS_POINTS_DIVISOR) / (BASIS_POINTS_DIVISOR - SWAP_FEE_BASIS_POINTS));
-            feeAmount = absInputAmount - absOutputAmount;
+            absInputAmount = absOutputAmount; // exactly 1:1
         }
 
         // Circuit breaker: check if swap would create excessive imbalance
         _checkCircuitBreaker(poolId, params.zeroForOne, absInputAmount, absOutputAmount);
 
-        // Create BeforeSwapDelta for 1:1 swap
+        // Create BeforeSwapDelta following CSMM pattern
+        // BeforeSwapDelta represents (specifiedCurrency, unspecifiedCurrency) based on amountSpecified
+        // For exact input (negative amountSpecified): specified = input, unspecified = output
+        // For exact output (positive amountSpecified): specified = output, unspecified = input
+        // In both cases, we return the SAME delta pattern as CSMM: (-abs(input), abs(output))
         BeforeSwapDelta beforeSwapDelta;
         if (isExactInput) {
+            // Exact input: specified = input, unspecified = output
+            // Delta format: (specifiedDelta, unspecifiedDelta) = (+input, -output)
             beforeSwapDelta = toBeforeSwapDelta(int128(absInputAmount), -int128(absOutputAmount));
         } else {
-            beforeSwapDelta = toBeforeSwapDelta(-int128(absInputAmount), int128(absOutputAmount));
+            // Exact output: specified = output, unspecified = input  
+            // Delta format: (specifiedDelta, unspecifiedDelta) = (-output, +input)
+            beforeSwapDelta = toBeforeSwapDelta(-int128(absOutputAmount), int128(absInputAmount));
         }
 
         // Execute swap and update reserves
-        _executeSwap(poolId, key, params.zeroForOne, absInputAmount, absOutputAmount, feeAmount);
+        _executeSwap(poolId, key, params.zeroForOne, absInputAmount, absOutputAmount);
 
-        emit Swap(poolId, sender, absInputAmount, absOutputAmount, feeAmount, params.zeroForOne);
+        emit Swap(poolId, sender, absInputAmount, absOutputAmount, params.zeroForOne);
 
         return (this.beforeSwap.selector, beforeSwapDelta, 0);
     }
@@ -402,35 +377,29 @@ contract ConstantSumHook is BaseHook {
     }
 
     /**
-     * @notice Execute swap and update reserves/fees
+     * @notice Execute swap and update reserves (no fees)
      */
     function _executeSwap(
         PoolId poolId,
         PoolKey calldata key,
         bool zeroForOne,
         uint128 absInputAmount,
-        uint128 absOutputAmount,
-        uint128 feeAmount
+        uint128 absOutputAmount
     ) internal {
-        uint128 protocolFee = uint128((uint256(feeAmount) * PROTOCOL_FEE_SHARE) / BASIS_POINTS_DIVISOR);
-        uint128 lpFee = feeAmount - protocolFee;
-
         if (zeroForOne) {
             // User sells currency0 for currency1
             key.currency0.take(poolManager, address(this), absInputAmount, true);
             key.currency1.settle(poolManager, address(this), absOutputAmount, true);
 
-            reserves[poolId][0] = reserves[poolId][0] + absInputAmount + lpFee;
+            reserves[poolId][0] = reserves[poolId][0] + absInputAmount;
             reserves[poolId][1] = reserves[poolId][1] - absOutputAmount;
-            protocolFees[poolId][0] = protocolFees[poolId][0] + protocolFee;
         } else {
             // User sells currency1 for currency0
             key.currency0.settle(poolManager, address(this), absOutputAmount, true);
             key.currency1.take(poolManager, address(this), absInputAmount, true);
 
             reserves[poolId][0] = reserves[poolId][0] - absOutputAmount;
-            reserves[poolId][1] = reserves[poolId][1] + absInputAmount + lpFee;
-            protocolFees[poolId][1] = protocolFees[poolId][1] + protocolFee;
+            reserves[poolId][1] = reserves[poolId][1] + absInputAmount;
         }
     }
 }
