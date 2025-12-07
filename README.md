@@ -50,6 +50,20 @@ cd brens-protocol
 forge install
 ```
 
+### Run Tests
+All 18 tests are passing ✅
+
+```bash
+# Run all tests
+forge test
+
+# Run with verbose output
+forge test -vvv
+
+# Run with gas reports
+forge test --gas-report
+```
+
 ### Basic Usage
 ```solidity
 // Add liquidity (equal amounts)
@@ -137,7 +151,24 @@ Result:  68% USDC, 32% USDT  ✅ Allowed (improves balance)
 forge install
 ```
 
-### Deploy Hook
+### Option 1: Using Deployment Scripts (Recommended)
+
+Deployment scripts are available in the `script/` directory:
+
+```bash
+# Deploy hook only
+forge script script/DeployConstantSumHook.s.sol --rpc-url <RPC_URL> --broadcast
+
+# Deploy and test everything (hook + tokens + pool)
+forge script script/DeployAndTestComplete.s.sol --rpc-url <RPC_URL> --broadcast
+```
+
+See [script/README.md](./script/README.md) for detailed deployment instructions.
+
+### Option 2: Manual Deployment
+
+You can also deploy the hook manually:
+
 ```solidity
 // 1. Mine address with correct permissions
 uint160 flags = uint160(
@@ -248,9 +279,14 @@ Transfer contract ownership.
 
 ## Testing
 
+✅ All 18 tests passing
+
 ```bash
-# Run all tests (18 tests)
+# Run all tests
 forge test
+
+# Run with verbose output
+forge test -vvv
 
 # Run with gas reports
 forge test --gas-report
@@ -261,6 +297,14 @@ forge test --match-test testSwap -vvv
 # Test keeper functionality
 forge test --match-test test_rebalance -vvv
 ```
+
+### Test Coverage
+- ✅ Liquidity provision (add/remove)
+- ✅ Swaps (exact input/output)
+- ✅ Circuit breaker protection
+- ✅ Keeper rebalancing
+- ✅ Access control
+- ✅ Edge cases and error handling
 
 ## Gas Costs
 
