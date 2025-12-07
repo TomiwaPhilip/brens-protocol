@@ -307,4 +307,108 @@ contract ConstantSumHookTest is Test, Deployers {
         assertEq(hook.maxImbalanceRatio(), 8000);
         assertEq(hook.minImbalanceRatio(), 2000);
     }
+
+    function test_setKeeper() public {
+        // Initially no keeper set
+        assertEq(hook.keeper(), address(0));
+
+        // Set keeper
+        address keeper = address(0x456);
+        hook.setKeeper(keeper);
+        assertEq(hook.keeper(), keeper);
+
+        // Non-owner cannot set keeper
+        vm.prank(keeper);
+        vm.expectRevert(ConstantSumHook.Unauthorized.selector);
+        hook.setKeeper(address(0x789));
+    }
+
+    function test_checkRebalanceNeeded() public {
+        // Initially balanced pool
+        (bool needsRebalance, uint256 amount0ToAdd, uint256 amount1ToAdd) = hook.checkRebalanceNeeded(key);
+        assertFalse(needsRebalance);
+        assertEq(amount0ToAdd, 0);
+        assertEq(amount1ToAdd, 0);
+
+        // Perform swap to create imbalance
+        swap(key, true, -100e18, ZERO_BYTES);
+
+        // Check if rebalance needed
+        (needsRebalance, amount0ToAdd, amount1ToAdd) = hook.checkRebalanceNeeded(key);
+        assertTrue(needsRebalance);
+        assertEq(amount0ToAdd, 0);
+        assertEq(amount1ToAdd, 200e18); // Need to add 200 to balance (1100 vs 900)
+    }
+
+    function test_rebalancePool() public {
+        // Set keeper
+        address keeper = address(0x456);
+        hook.setKeeper(keeper);
+
+        // Mint tokens to keeper
+        deal(Currency.unwrap(key.currency0), keeper, 1000e18);
+        deal(Currency.unwrap(key.currency1), keeper, 1000e18);
+
+        // Perform swap to create imbalance (1100:900)
+        swap(key, true, -100e18, ZERO_BYTES);
+
+        // Verify imbalance
+        (uint256 reserve0Before, uint256 reserve1Before) = hook.getReserves(key);
+        assertEq(reserve0Before, 1100e18);
+        assertEq(reserve1Before, 900e18);
+
+        // Keeper rebalances - approve hook not manager
+        vm.startPrank(keeper);
+        IERC20Minimal(Currency.unwrap(key.currency0)).approve(address(hook), 1000e18);
+        IERC20Minimal(Currency.unwrap(key.currency1)).approve(address(hook), 1000e18);
+        hook.rebalancePool(key);
+        vm.stopPrank();
+
+        // Verify pool is balanced
+        (uint256 reserve0After, uint256 reserve1After) = hook.getReserves(key);
+        assertEq(reserve0After, 1100e18);
+        assertEq(reserve1After, 1100e18); // Added 200 to currency1
+    }
+
+    function test_rebalancePool_ownerCanRebalance() public {
+        // Owner can rebalance without being set as keeper
+        deal(Currency.unwrap(key.currency0), address(this), 1000e18);
+        deal(Currency.unwrap(key.currency1), address(this), 1000e18);
+
+        // Create imbalance
+        swap(key, true, -100e18, ZERO_BYTES);
+
+        // Owner rebalances - approve hook not manager
+        IERC20Minimal(Currency.unwrap(key.currency0)).approve(address(hook), 1000e18);
+        IERC20Minimal(Currency.unwrap(key.currency1)).approve(address(hook), 1000e18);
+        hook.rebalancePool(key);
+
+        // Verify balanced
+        (uint256 reserve0, uint256 reserve1) = hook.getReserves(key);
+        assertEq(reserve0, reserve1);
+    }
+
+    function test_rebalancePool_revertsWhenAlreadyBalanced() public {
+        // Set keeper
+        address keeper = address(0x456);
+        hook.setKeeper(keeper);
+
+        // Try to rebalance already balanced pool
+        vm.prank(keeper);
+        vm.expectRevert(ConstantSumHook.PoolAlreadyBalanced.selector);
+        hook.rebalancePool(key);
+    }
+
+    function test_rebalancePool_revertsForUnauthorized() public {
+        address unauthorized = address(0x999);
+        
+        // Create imbalance
+        swap(key, true, -100e18, ZERO_BYTES);
+
+        // Unauthorized user tries to rebalance
+        vm.prank(unauthorized);
+        vm.expectRevert(ConstantSumHook.Unauthorized.selector);
+        hook.rebalancePool(key);
+    }
 }
+

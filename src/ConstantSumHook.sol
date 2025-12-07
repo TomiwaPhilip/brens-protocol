@@ -30,6 +30,7 @@ contract ConstantSumHook is BaseHook {
     error InsufficientLiquidity();
     error ExcessiveImbalance();
     error Unauthorized();
+    error PoolAlreadyBalanced();
 
     // Circuit breaker constants
     uint256 public constant BASIS_POINTS_DIVISOR = 10000;
@@ -40,6 +41,7 @@ contract ConstantSumHook is BaseHook {
 
     // Access control
     address public owner;
+    address public keeper; // Trusted bot for auto-rebalancing
 
     // Reserve tracking for circuit breaker
     mapping(PoolId => uint256[2]) public reserves;
@@ -67,11 +69,23 @@ contract ConstantSumHook is BaseHook {
         uint256 amount1
     );
 
+    event PoolRebalanced(
+        PoolId indexed poolId,
+        address indexed keeper,
+        uint256 amount0Added,
+        uint256 amount1Added
+    );
+
+    event KeeperUpdated(address indexed oldKeeper, address indexed newKeeper);
+
     struct CallbackData {
         uint256 amountEach;
         PoolKey key;
         address sender;
         bool isRemove; // true for remove, false for add
+        bool isRebalance; // true for rebalance
+        uint256 amount0ToAdd; // For rebalance
+        uint256 amount1ToAdd; // For rebalance
     }
 
     modifier onlyOwner() {
@@ -144,6 +158,16 @@ contract ConstantSumHook is BaseHook {
         minImbalanceRatio = newMinRatio;
     }
 
+    /**
+     * @notice Set or update the keeper address
+     * @param newKeeper Address of the new keeper (set to address(0) to disable)
+     */
+    function setKeeper(address newKeeper) external onlyOwner {
+        address oldKeeper = keeper;
+        keeper = newKeeper;
+        emit KeeperUpdated(oldKeeper, newKeeper);
+    }
+
     // ========== VIEW FUNCTIONS ==========
 
     /**
@@ -157,6 +181,47 @@ contract ConstantSumHook is BaseHook {
     ) external view returns (uint256 reserve0, uint256 reserve1) {
         PoolId poolId = key.toId();
         return (reserves[poolId][0], reserves[poolId][1]);
+    }
+
+    /**
+     * @notice Check if pool needs rebalancing
+     * @param key Pool key
+     * @return needsRebalance True if pool is imbalanced
+     * @return amount0ToAdd Amount of currency0 needed to rebalance
+     * @return amount1ToAdd Amount of currency1 needed to rebalance
+     */
+    function checkRebalanceNeeded(
+        PoolKey calldata key
+    ) external view returns (bool needsRebalance, uint256 amount0ToAdd, uint256 amount1ToAdd) {
+        PoolId poolId = key.toId();
+        uint256 reserve0 = reserves[poolId][0];
+        uint256 reserve1 = reserves[poolId][1];
+
+        if (reserve0 == 0 && reserve1 == 0) {
+            return (false, 0, 0);
+        }
+
+        // Check if reserves are already balanced (50/50)
+        uint256 totalReserves = reserve0 + reserve1;
+        uint256 ratio0 = (reserve0 * BASIS_POINTS_DIVISOR) / totalReserves;
+
+        // If already balanced (within 1% of 50/50), no rebalance needed
+        if (ratio0 >= 4900 && ratio0 <= 5100) {
+            return (false, 0, 0);
+        }
+
+        // Calculate how much to add to balance to 50/50
+        if (reserve0 > reserve1) {
+            // Too much currency0, need to add currency1
+            amount1ToAdd = reserve0 - reserve1;
+            amount0ToAdd = 0;
+        } else {
+            // Too much currency1, need to add currency0
+            amount0ToAdd = reserve1 - reserve0;
+            amount1ToAdd = 0;
+        }
+
+        return (true, amount0ToAdd, amount1ToAdd);
     }
 
     // ========== POOL INITIALIZATION ==========
@@ -200,7 +265,10 @@ contract ConstantSumHook is BaseHook {
                     amountEach: amountEach,
                     key: key,
                     sender: msg.sender,
-                    isRemove: false
+                    isRemove: false,
+                    isRebalance: false,
+                    amount0ToAdd: 0,
+                    amount1ToAdd: 0
                 })
             )
         );
@@ -239,12 +307,62 @@ contract ConstantSumHook is BaseHook {
                     amountEach: amountEach,
                     key: key,
                     sender: msg.sender,
-                    isRemove: true
+                    isRemove: true,
+                    isRebalance: false,
+                    amount0ToAdd: 0,
+                    amount1ToAdd: 0
                 })
             )
         );
 
         emit LiquidityRemoved(poolId, msg.sender, amountEach, amountEach);
+    }
+
+    /**
+     * @notice Rebalance pool by adding liquidity to the deficient side
+     * @param key Pool key
+     * @dev Can only be called by keeper. Automatically calculates required amounts.
+     */
+    function rebalancePool(PoolKey calldata key) external {
+        if (msg.sender != keeper && msg.sender != owner) revert Unauthorized();
+
+        PoolId poolId = key.toId();
+        uint256 reserve0 = reserves[poolId][0];
+        uint256 reserve1 = reserves[poolId][1];
+
+        // Check if pool needs rebalancing
+        if (reserve0 == reserve1) revert PoolAlreadyBalanced();
+
+        uint256 amount0ToAdd;
+        uint256 amount1ToAdd;
+
+        // Calculate how much to add to balance to 50/50
+        if (reserve0 > reserve1) {
+            // Too much currency0, need to add currency1
+            amount1ToAdd = reserve0 - reserve1;
+            amount0ToAdd = 0;
+        } else {
+            // Too much currency1, need to add currency0
+            amount0ToAdd = reserve1 - reserve0;
+            amount1ToAdd = 0;
+        }
+
+        // Use unlock pattern for rebalancing
+        poolManager.unlock(
+            abi.encode(
+                CallbackData({
+                    amountEach: 0,
+                    key: key,
+                    sender: msg.sender,
+                    isRemove: false,
+                    isRebalance: true,
+                    amount0ToAdd: amount0ToAdd,
+                    amount1ToAdd: amount1ToAdd
+                })
+            )
+        );
+
+        emit PoolRebalanced(poolId, msg.sender, amount0ToAdd, amount1ToAdd);
     }
 
     /**
@@ -254,8 +372,47 @@ contract ConstantSumHook is BaseHook {
         bytes calldata data
     ) external onlyPoolManager returns (bytes memory) {
         CallbackData memory callbackData = abi.decode(data, (CallbackData));
+        PoolId poolId = callbackData.key.toId();
 
-        if (callbackData.isRemove) {
+        if (callbackData.isRebalance) {
+            // REBALANCE: Add liquidity to deficient side only
+
+            if (callbackData.amount0ToAdd > 0) {
+                // Settle: transfer tokens from keeper to PoolManager
+                callbackData.key.currency0.settle(
+                    poolManager,
+                    callbackData.sender,
+                    callbackData.amount0ToAdd,
+                    false
+                );
+                // Take: mint claim tokens to hook
+                callbackData.key.currency0.take(
+                    poolManager,
+                    address(this),
+                    callbackData.amount0ToAdd,
+                    true
+                );
+                reserves[poolId][0] += callbackData.amount0ToAdd;
+            }
+
+            if (callbackData.amount1ToAdd > 0) {
+                // Settle: transfer tokens from keeper to PoolManager
+                callbackData.key.currency1.settle(
+                    poolManager,
+                    callbackData.sender,
+                    callbackData.amount1ToAdd,
+                    false
+                );
+                // Take: mint claim tokens to hook
+                callbackData.key.currency1.take(
+                    poolManager,
+                    address(this),
+                    callbackData.amount1ToAdd,
+                    true
+                );
+                reserves[poolId][1] += callbackData.amount1ToAdd;
+            }
+        } else if (callbackData.isRemove) {
             // REMOVE LIQUIDITY: Burn claim tokens, send real tokens to user
             
             // Settle: burn claim tokens from hook (creates debit for hook)
@@ -318,12 +475,11 @@ contract ConstantSumHook is BaseHook {
             );
         }
 
-        // Update reserves for circuit breaker
-        PoolId poolId = callbackData.key.toId();
-
-        if (!callbackData.isRemove) {
+        // Update reserves for circuit breaker (only for regular add liquidity, not rebalance or remove)
+        if (!callbackData.isRemove && !callbackData.isRebalance) {
             // Only update reserves for add operations
             // Remove operations already updated reserves before unlock
+            // Rebalance operations update reserves during the operation
             reserves[poolId][0] += callbackData.amountEach;
             reserves[poolId][1] += callbackData.amountEach;
         }

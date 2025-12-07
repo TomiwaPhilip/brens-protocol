@@ -213,6 +213,17 @@ hook.removeLiquidity(key, 2000 ether);
 // Update circuit breaker (owner only)
 hook.setCircuitBreakerThresholds(8000, 2000); // 80/20 ratio
 
+// Set keeper for auto-rebalancing (owner only)
+hook.setKeeper(0x...keeperAddress);
+
+// Check if pool needs rebalancing
+(bool needsRebalance, uint256 amount0ToAdd, uint256 amount1ToAdd) = hook.checkRebalanceNeeded(key);
+
+// Rebalance pool (keeper or owner only)
+// Keeper must approve tokens to hook first
+IERC20(token).approve(address(hook), amount);
+hook.rebalancePool(key);
+
 // Get reserves
 (uint256 reserve0, uint256 reserve1) = hook.getReserves(key);
 
@@ -223,3 +234,55 @@ swapRouter.swap(key, SwapParams({
     sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
 }));
 ```
+
+## Keeper Bot Integration
+
+The hook supports automatic pool rebalancing via a trusted keeper bot:
+
+### Setting Up a Keeper
+
+1. **Set Keeper Address** (owner only):
+```bash
+cast send $HOOK_ADDRESS "setKeeper(address)" $KEEPER_ADDRESS \
+  --rpc-url $RPC_URL \
+  --private-key $OWNER_PRIVATE_KEY
+```
+
+2. **Keeper Bot Monitoring**:
+```javascript
+// Pseudo-code for keeper bot
+async function monitorAndRebalance() {
+  const [needsRebalance, amount0, amount1] = await hook.checkRebalanceNeeded(key);
+  
+  if (needsRebalance) {
+    // Approve required token
+    if (amount0 > 0) {
+      await token0.approve(hook.address, amount0);
+    } else {
+      await token1.approve(hook.address, amount1);
+    }
+    
+    // Execute rebalance
+    await hook.rebalancePool(key);
+    console.log(`Pool rebalanced: added ${amount0} token0, ${amount1} token1`);
+  }
+}
+
+// Run every N minutes
+setInterval(monitorAndRebalance, 5 * 60 * 1000);
+```
+
+### Keeper Benefits
+
+- ✅ **Automated**: Bot automatically detects and fixes imbalances
+- ✅ **Permissioned**: Only keeper or owner can rebalance
+- ✅ **Gas Efficient**: Only adds to deficient side, not both
+- ✅ **MEV Protected**: No arbitrage opportunities from rebalancing
+
+### Keeper Requirements
+
+- Must have sufficient balance of both tokens
+- Must approve tokens to the **hook address** (not PoolManager)
+- Should monitor gas prices to optimize rebalance timing
+- Can be disabled by setting keeper to `address(0)`
+
