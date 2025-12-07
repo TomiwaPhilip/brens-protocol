@@ -170,6 +170,9 @@ PoolKey memory key = PoolKey({
 
 poolManager.initialize(key, SQRT_PRICE_1_1);
 ```
+## Notes 
+
+**No partner integrations**
 
 ## API Reference
 
